@@ -1,38 +1,20 @@
 # AI Voice Memo App
 
-A Next.js application that allows users to record voice memos, which are then processed using AI to transcribe, summarize, and extract tasks.
+A Next.js application that records voice memos, processes them with Google's Gemini API, and extracts key information.
 
-## Features
+## Prerequisites
 
-- Record voice memos up to 45 minutes long
-- Live audio visualization during recording
-- Playback recorded audio before processing
-- Upload existing audio files
-- AI processing workflow:
-  - Transcription of audio to text
-  - Automatic summarization
-  - Task/action item extraction with deadlines
-  - Question answering about memo content
+1. Node.js 18 or later
+2. FFmpeg installed on your system
+   - On macOS: `brew install ffmpeg`
+   - On Ubuntu/Debian: `sudo apt-get install ffmpeg`
+   - On Windows: Download from [FFmpeg's official site](https://ffmpeg.org/download.html)
+3. Google Cloud account with:
+   - Storage bucket configured
+   - Service account with appropriate permissions
+   - Gemini API enabled
 
-## Tech Stack
-
-- Next.js 15 with React 19
-- TypeScript
-- Tailwind CSS
-- shadcn/ui components
-- Google Cloud Storage
-- Google Gemini API
-
-## Setup and Installation
-
-### Prerequisites
-
-- Node.js 18+
-- npm or pnpm
-- Google Cloud Storage account and bucket
-- Google Gemini API key
-
-### Installation
+## Installation
 
 1. Clone the repository:
    ```bash

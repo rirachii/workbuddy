@@ -1,4 +1,5 @@
-// This file handles Gemini API integration via the server API
+// This file handles GoogleGenAI API integration via the server API
+import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from '@google/generative-ai';
 
 interface TranscriptionResult {
   transcription: string;
@@ -11,14 +12,18 @@ interface TranscriptionResult {
 }
 
 interface GeminiServiceConfig {
-  endpoint?: string;
+  apiKey?: string;
 }
 
 export class GeminiService {
-  private endpoint: string;
+  private genAI: GoogleGenerativeAI | null = null;
+  private apiKey?: string;
 
   constructor(config: GeminiServiceConfig) {
-    this.endpoint = config.endpoint || 'https://generativelanguage.googleapis.com/v1';
+    this.apiKey = config.apiKey;
+    if (this.apiKey) {
+      this.genAI = new GoogleGenerativeAI(this.apiKey);
+    }
   }
 
   /**
