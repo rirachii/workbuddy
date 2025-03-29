@@ -49,8 +49,21 @@ export const useRecorder = () => {
     
     stopTimer();
     
+    console.log('Stopping recording...');
+    
+    // Make sure we capture any remaining data before stopping
     if (recorderState.mediaRecorder.state !== 'inactive') {
-      recorderState.mediaRecorder.stop();
+      // Request a final data chunk before stopping
+      try {
+        // Only request data if recording is active
+        if (recorderState.mediaRecorder.state === 'recording') {
+          recorderState.mediaRecorder.requestData();
+        }
+        recorderState.mediaRecorder.stop();
+        console.log('Recording stopped successfully');
+      } catch (err) {
+        console.error('Error stopping recorder:', err);
+      }
     }
     
     // Stop all tracks on the stream
@@ -72,18 +85,26 @@ export const useRecorder = () => {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
       
-      const recorder = new MediaRecorder(stream);
+      // Create media recorder with specific options
+      const recorderOptions = { mimeType: 'audio/webm' };
+      const recorder = new MediaRecorder(stream, recorderOptions);
       mediaChunks.current = [];
       
       recorder.addEventListener('dataavailable', (event) => {
+        console.log('Data chunk received, size:', event.data.size, 'bytes');
         if (event.data.size > 0) {
           mediaChunks.current.push(event.data);
         }
       });
       
       recorder.addEventListener('stop', () => {
-        const audioBlob = new Blob(mediaChunks.current, { type: 'audio/webm' });
+        // Specifically use 'audio/webm' MIME type which is well-supported
+        const audioBlob = new Blob(mediaChunks.current, { 
+          type: 'audio/webm;codecs=opus'
+        });
         const audioUrl = URL.createObjectURL(audioBlob);
+        
+        console.log('Recording complete - Blob size:', audioBlob.size, 'bytes');
         
         setRecorderState(prev => ({
           ...prev,
@@ -92,7 +113,8 @@ export const useRecorder = () => {
         }));
       });
       
-      recorder.start(1000); // Collect data in 1-second chunks
+      // Start recording with smaller chunk intervals (250ms instead of 1000ms)
+      recorder.start(250);
       
       // Start timer
       timerRef.current = setInterval(() => {

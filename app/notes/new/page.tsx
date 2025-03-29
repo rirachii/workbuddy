@@ -67,11 +67,13 @@ export default function NewNotePage() {
         const storedAudio = sessionStorage.getItem('currentRecording')
         
         if (storedAudio) {
-          const { blob, duration } = JSON.parse(storedAudio)
+          const { blob, type, duration } = JSON.parse(storedAudio)
           if (blob) {
-            // In a real app, you'd deserialize the blob from storage
-            // This is a simplified version for the demo
-            const blobData = new Blob([new Uint8Array(Object.values(blob))], { type: 'audio/webm' })
+            // Properly reconstruct the blob with the correct type
+            const uint8Array = new Uint8Array(blob);
+            const blobData = new Blob([uint8Array], { 
+              type: type || 'audio/webm;codecs=opus'
+            });
             setAudioBlob(blobData)
             
             // Create a URL for audio playback

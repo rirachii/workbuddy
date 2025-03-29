@@ -11,28 +11,25 @@ function getStorageClient() {
   if (storage) return storage;
   
   try {
-    const credentialsPath = process.env.GOOGLE_CLOUD_CREDENTIALS_PATH;
+    const clientEmail = process.env.GOOGLE_CLOUD_CLIENT_EMAIL;
+    const privateKey = process.env.GOOGLE_CLOUD_PRIVATE_KEY;
+    const projectId = process.env.NEXT_PUBLIC_GOOGLE_CLOUD_PROJECT_ID;
     
-    if (credentialsPath) {
-      // Option 1: Use credentials file
+    if (clientEmail && privateKey && projectId) {
+      // Use service account credentials from environment variables
       storage = new Storage({
-        keyFilename: credentialsPath
-      });
-    } else if (process.env.GOOGLE_CLOUD_CLIENT_EMAIL && process.env.GOOGLE_CLOUD_PRIVATE_KEY) {
-      // Option 2: Use individual credential components
-      storage = new Storage({
-        projectId: process.env.NEXT_PUBLIC_GOOGLE_CLOUD_PROJECT_ID,
+        projectId,
         credentials: {
-          client_email: process.env.GOOGLE_CLOUD_CLIENT_EMAIL,
-          private_key: process.env.GOOGLE_CLOUD_PRIVATE_KEY
+          client_email: clientEmail,
+          private_key: privateKey.replace(/\\n/g, '\n') // Fix newline characters
         }
       });
-    } else {
-      console.error('No Google Cloud credentials found');
-      return null;
+      console.log('Storage client initialized with service account:', clientEmail);
+      return storage;
     }
     
-    return storage;
+    console.error('Missing required Google Cloud credentials');
+    return null;
   } catch (error) {
     console.error('Error initializing Storage client:', error);
     return null;
@@ -69,27 +66,70 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+    
+    // Log file details for debugging
+    console.log('File received:', {
+      name: file.name,
+      type: file.type,
+      size: file.size,
+    });
+    
+    if (file.size === 0) {
+      return NextResponse.json(
+        { error: 'Empty file received (zero bytes)' },
+        { status: 400 }
+      );
+    }
 
     // Generate a unique filename with timestamp
     const fileName = `recording_${Date.now()}_${file.name}`;
     
     // Create a buffer from the file
-    const buffer = Buffer.from(await file.arrayBuffer());
+    let buffer;
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      console.log('ArrayBuffer created with size:', arrayBuffer.byteLength, 'bytes');
+      
+      // Verify buffer is not empty
+      if (arrayBuffer.byteLength === 0) {
+        return NextResponse.json(
+          { error: 'File has zero bytes after conversion to buffer' },
+          { status: 400 }
+        );
+      }
+      
+      buffer = Buffer.from(arrayBuffer);
+      console.log('Buffer created with size:', buffer.length, 'bytes');
+    } catch (error) {
+      console.error('Error creating buffer from file:', error);
+      return NextResponse.json(
+        { error: 'Failed to process file data' },
+        { status: 500 }
+      );
+    }
     
     // Upload to Google Cloud Storage
     const bucket = storageClient.bucket(bucketName);
     const blob = bucket.file(fileName);
     
-    // Upload the file
+    // Upload the file with proper MIME type
     await blob.save(buffer, {
-      contentType: file.type,
+      contentType: file.type || 'audio/webm',
       metadata: {
-        contentType: file.type,
+        contentType: file.type || 'audio/webm',
+        cacheControl: 'public, max-age=31536000',
         metadata: {
           originalName: file.name,
           uploadedAt: new Date().toISOString()
         }
       }
+    });
+    
+    // Set proper CORS headers for public access
+    await blob.setMetadata({
+      contentType: file.type || 'audio/webm',
+      cacheControl: 'public, max-age=31536000',
+      contentDisposition: `inline; filename="${file.name}"`
     });
     
     // Get the URL for the uploaded file

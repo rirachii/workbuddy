@@ -61,24 +61,21 @@ export default function Home() {
     }
   }
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!audioBlob) {
       toast.error("No recording to save")
       return
     }
 
     try {
-      // In a real app, we'd upload this to a server or database
-      // For our demo, we'll store in sessionStorage
-      
-      // Store the blob in sessionStorage
-      // Note: This is a simplification - for large recordings,
-      // this approach won't work well since sessionStorage has size limits
-      // In a real app, you'd use a server-side solution
-      const blobArray = Array.from(new Uint8Array(audioBlob as any))
+      // Convert blob to array buffer
+      const arrayBuffer = await audioBlob.arrayBuffer();
+      const uint8Array = new Uint8Array(arrayBuffer);
+      const blobArray = Array.from(uint8Array);
       
       sessionStorage.setItem('currentRecording', JSON.stringify({
         blob: blobArray,
+        type: audioBlob.type || 'audio/webm;codecs=opus',
         duration: recordingTime,
         timestamp: Date.now()
       }))

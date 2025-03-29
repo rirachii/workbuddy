@@ -54,8 +54,21 @@ export class StorageService {
       const formData = new FormData();
       const actualFileName = fileName || `recording_${Date.now()}.webm`;
       
-      // Add the file to the form data
-      formData.append('file', audioBlob, actualFileName);
+      // Create a new Blob with explicit MIME type if needed
+      let uploadBlob;
+      if (audioBlob.type && audioBlob.type.includes('audio')) {
+        uploadBlob = audioBlob;
+        console.log('Using original blob with MIME type:', audioBlob.type);
+      } else {
+        // Force the MIME type to audio/webm
+        uploadBlob = new Blob([audioBlob], { type: 'audio/webm;codecs=opus' });
+        console.log('Created new blob with explicit MIME type: audio/webm;codecs=opus');
+      }
+      
+      console.log('Uploading blob size:', uploadBlob.size, 'bytes');
+      
+      // Add the file to the form data with explicit MIME type
+      formData.append('file', uploadBlob, actualFileName);
       
       // Send the file to the server API endpoint
       const response = await fetch('/api/upload', {
