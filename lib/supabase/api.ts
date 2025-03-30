@@ -1,0 +1,127 @@
+import { supabase } from './client'
+import { Database } from './types'
+
+type Memo = Database['public']['Tables']['memos']['Row']
+type Todo = Database['public']['Tables']['todos']['Row']
+
+// Memo functions
+export async function createMemo(memo: Omit<Memo, 'id' | 'created_at' | 'updated_at'>) {
+  const { data, error } = await supabase
+    .from('memos')
+    .insert(memo)
+    .select()
+    .single()
+  
+  if (error) throw error
+  return data
+}
+
+export async function getMemos(userId: string) {
+  const { data, error } = await supabase
+    .from('memos')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+  
+  if (error) throw error
+  return data
+}
+
+export async function getMemoById(id: string) {
+  const { data, error } = await supabase
+    .from('memos')
+    .select('*')
+    .eq('id', id)
+    .single()
+  
+  if (error) throw error
+  return data
+}
+
+export async function updateMemo(id: string, updates: Partial<Memo>) {
+  const { data, error } = await supabase
+    .from('memos')
+    .update(updates)
+    .eq('id', id)
+    .select()
+    .single()
+  
+  if (error) throw error
+  return data
+}
+
+export async function deleteMemo(id: string) {
+  const { error } = await supabase
+    .from('memos')
+    .delete()
+    .eq('id', id)
+  
+  if (error) throw error
+}
+
+// Todo functions
+export async function createTodo(todo: Omit<Todo, 'id' | 'created_at' | 'updated_at'>) {
+  const { data, error } = await supabase
+    .from('todos')
+    .insert(todo)
+    .select()
+    .single()
+  
+  if (error) throw error
+  return data
+}
+
+export async function getTodos(userId: string) {
+  const { data, error } = await supabase
+    .from('todos')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+  
+  if (error) throw error
+  return data
+}
+
+export async function getTodosByMemoId(memoId: string) {
+  const { data, error } = await supabase
+    .from('todos')
+    .select('*')
+    .eq('memo_id', memoId)
+    .order('created_at', { ascending: false })
+  
+  if (error) throw error
+  return data
+}
+
+export async function updateTodo(id: string, updates: Partial<Todo>) {
+  const { data, error } = await supabase
+    .from('todos')
+    .update(updates)
+    .eq('id', id)
+    .select()
+    .single()
+  
+  if (error) throw error
+  return data
+}
+
+export async function deleteTodo(id: string) {
+  const { error } = await supabase
+    .from('todos')
+    .delete()
+    .eq('id', id)
+  
+  if (error) throw error
+}
+
+export async function toggleTodoComplete(id: string, isCompleted: boolean) {
+  const { data, error } = await supabase
+    .from('todos')
+    .update({ is_completed: isCompleted })
+    .eq('id', id)
+    .select()
+    .single()
+  
+  if (error) throw error
+  return data
+} 

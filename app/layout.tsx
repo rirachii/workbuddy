@@ -3,7 +3,7 @@ import "@/app/globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 
 export const metadata = {
-  title: 'Voice Memo AI',
+  title: 'Job Hunter AI',
   description: 'AI-powered voice memo app',
   generator: 'v0.dev'
 };
