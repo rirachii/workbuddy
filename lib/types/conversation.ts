@@ -2,6 +2,7 @@ export interface Task {
   id: string;
   text: string;
   deadline: string;
+  subtasks: string[];
   isPriority: boolean;
 }
 

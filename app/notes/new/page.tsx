@@ -44,7 +44,6 @@ export default function NewNotePage() {
   
   // Processed data
   const [title, setTitle] = useState("New Recording")
-  const [transcription, setTranscription] = useState<string>("")
   const [summary, setSummary] = useState<string>("")
   const [tasks, setTasks] = useState<{id: string, text: string, deadline: string}[]>([])
   
@@ -161,7 +160,6 @@ export default function NewNotePage() {
       // 3. Update with processing results
       setProcessingStage(ProcessingStage.SUMMARIZING)
       setProgress(70)
-      setTranscription(geminiResult.transcription)
       
       setProcessingStage(ProcessingStage.EXTRACTING)
       setProgress(90)
@@ -389,15 +387,6 @@ export default function NewNotePage() {
               <CardTitle className="text-lg">AI Processing Complete</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div>
-                <h3 className="font-medium mb-1">Transcription</h3>
-                <p className="text-sm text-muted-foreground">
-                  {transcription ? 
-                    `${transcription.slice(0, 150)}...` : 
-                    "Your recording has been transcribed"}
-                </p>
-              </div>
-
               <div>
                 <h3 className="font-medium mb-1">Summary</h3>
                 <p className="text-sm text-muted-foreground">

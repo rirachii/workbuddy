@@ -1,7 +1,29 @@
 import { useState, useEffect } from 'react';
-import { Conversation } from '../types/conversation';
+import { Conversation, Task } from '../types/conversation';
 
 const STORAGE_KEY = 'jobhunter_conversations';
+
+// Helper function to migrate old task format to new format
+function migrateTask(task: any): Task {
+  return {
+    id: task.id || `task_${Date.now()}_${Math.random()}`,
+    text: task.text || '',
+    deadline: task.deadline || 'No deadline specified',
+    subtasks: task.subtasks || [], // Add default empty array for subtasks
+    isPriority: task.isPriority || false
+  };
+}
+
+// Helper function to migrate old conversation format to new format
+function migrateConversation(conversation: any): Conversation {
+  return {
+    id: conversation.id || `session_${Date.now()}`,
+    timestamp: conversation.timestamp || new Date().toISOString(),
+    summary: conversation.summary || '',
+    tasks: (conversation.tasks || []).map(migrateTask),
+    rawResponse: conversation.rawResponse || ''
+  };
+}
 
 export function useConversations() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -14,10 +36,15 @@ export function useConversations() {
         const stored = localStorage.getItem(STORAGE_KEY);
         if (stored) {
           const parsed = JSON.parse(stored);
-          // Sort conversations by timestamp, newest first
-          setConversations(parsed.sort((a: Conversation, b: Conversation) => 
-            new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-          ));
+          // Migrate and sort conversations by timestamp, newest first
+          const migratedConversations = parsed.map(migrateConversation)
+            .sort((a: Conversation, b: Conversation) => 
+              new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+            );
+          setConversations(migratedConversations);
+          
+          // Save migrated data back to localStorage
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(migratedConversations));
         }
       } catch (error) {
         console.error('Error loading conversations:', error);
@@ -31,7 +58,9 @@ export function useConversations() {
 
   // Add a new conversation
   const addConversation = (conversation: Conversation) => {
-    const updated = [conversation, ...conversations];
+    // Ensure the new conversation has the correct format
+    const migratedConversation = migrateConversation(conversation);
+    const updated = [migratedConversation, ...conversations];
     setConversations(updated);
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));

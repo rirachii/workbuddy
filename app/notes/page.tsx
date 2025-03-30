@@ -1,92 +1,133 @@
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { ArrowLeft, Clock, Calendar, Tag } from "lucide-react"
-import Link from "next/link"
+'use client';
 
-// Mock data for demo purposes
-const mockNotes = [
-  {
-    id: "1",
-    title: "Weekly Team Meeting",
-    date: "March 29, 2025",
-    duration: "12:34",
-    summary:
-      "Discussed Q2 goals, marketing strategy, and upcoming product launch. Action items assigned to team members.",
-    tags: ["meeting", "team", "planning"],
-  },
-  {
-    id: "2",
-    title: "Project Brainstorming",
-    date: "March 28, 2025",
-    duration: "08:21",
-    summary: "Generated ideas for the new mobile app design. Focus on user experience and accessibility features.",
-    tags: ["brainstorming", "design", "app"],
-  },
-  {
-    id: "3",
-    title: "Client Call - Acme Corp",
-    date: "March 27, 2025",
-    duration: "15:47",
-    summary: "Client requested timeline updates and budget review. Need to prepare proposal by next Friday.",
-    tags: ["client", "call", "proposal"],
-  },
-  {
-    id: "new",
-    title: "New Recording",
-    date: "March 29, 2025",
-    duration: "02:15",
-    summary: "Your recording has been transcribed and summarized. Tap to view details.",
-    tags: ["new"],
-  },
-]
+import { useState } from 'react';
+import Link from 'next/link';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Plus, ChevronRight, Trash2 } from 'lucide-react';
+import { useConversations } from '@/lib/hooks/useConversations';
+import { formatDistanceToNow } from 'date-fns';
 
 export default function NotesPage() {
+  const { conversations, deleteConversation } = useConversations();
+  const [expandedNote, setExpandedNote] = useState<string | null>(null);
+
+  const toggleExpand = (id: string) => {
+    setExpandedNote(expandedNote === id ? null : id);
+  };
+
   return (
     <main className="flex min-h-screen flex-col p-4 bg-background">
-      <div className="flex items-center mb-6">
-        <Link href="/">
-          <Button variant="ghost" size="icon" className="mr-2">
-            <ArrowLeft />
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-bold">My Notes</h1>
+        <Link href="/notes/new">
+          <Button>
+            <Plus size={16} className="mr-2" />
+            New Recording
           </Button>
         </Link>
-        <h1 className="text-2xl font-bold">Your Notes</h1>
       </div>
 
-      <div className="grid gap-4">
-        {mockNotes.map((note) => (
-          <Link href={`/notes/${note.id}`} key={note.id}>
-            <Card className={note.id === "new" ? "border-primary" : ""}>
-              <CardHeader className="pb-2">
-                <CardTitle>{note.title}</CardTitle>
-                <CardDescription className="flex items-center gap-1">
-                  <Calendar size={14} />
-                  {note.date}
-                  <span className="mx-1">•</span>
-                  <Clock size={14} />
-                  {note.duration}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="pb-2">
-                <p className="text-sm text-muted-foreground line-clamp-2">{note.summary}</p>
-              </CardContent>
-              <CardFooter>
-                <div className="flex flex-wrap gap-1">
-                  {note.tags.map((tag) => (
-                    <span
-                      key={tag}
-                      className="bg-secondary text-secondary-foreground text-xs px-2 py-1 rounded-full flex items-center"
-                    >
-                      <Tag size={10} className="mr-1" />
-                      {tag}
-                    </span>
-                  ))}
+      <div className="space-y-4">
+        {conversations.length === 0 ? (
+          <Card>
+            <CardContent className="flex flex-col items-center justify-center py-8 text-center">
+              <p className="text-muted-foreground mb-4">No notes yet. Start by recording your first note!</p>
+              <Link href="/notes/new">
+                <Button>
+                  <Plus size={16} className="mr-2" />
+                  New Recording
+                </Button>
+              </Link>
+            </CardContent>
+          </Card>
+        ) : (
+          conversations.map((conversation) => (
+            <Card key={conversation.id} className="hover:shadow-md transition-shadow">
+              <CardHeader className="cursor-pointer" onClick={() => toggleExpand(conversation.id)}>
+                <div className="flex items-center justify-between">
+                  <div className="space-y-1">
+                    <CardTitle className="text-lg">
+                      Note from {formatDistanceToNow(new Date(conversation.timestamp), { addSuffix: true })}
+                    </CardTitle>
+                    <p className="text-sm text-muted-foreground">
+                      {conversation.tasks.length} tasks identified
+                    </p>
+                  </div>
+                  <ChevronRight
+                    size={20}
+                    className={`transform transition-transform ${
+                      expandedNote === conversation.id ? 'rotate-90' : ''
+                    }`}
+                  />
                 </div>
-              </CardFooter>
+              </CardHeader>
+
+              {expandedNote === conversation.id && (
+                <CardContent className="space-y-4 pt-0">
+                  <div>
+                    <h3 className="font-medium mb-2">Summary</h3>
+                    <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                      {conversation.summary}
+                    </p>
+                  </div>
+
+                  <div>
+                    <h3 className="font-medium mb-2">Tasks</h3>
+                    <ul className="space-y-2">
+                      {conversation.tasks.map((task) => (
+                        <li
+                          key={task.id}
+                          className={`text-sm p-2 rounded-md border ${
+                            task.isPriority ? 'bg-primary/10 border-primary/20' : 'bg-muted border-muted-foreground/20'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1">
+                              <div className="flex items-start justify-between">
+                                <span className="font-medium">{task.text}</span>
+                                <span className="text-xs text-muted-foreground whitespace-nowrap ml-2">
+                                  {task.deadline}
+                                </span>
+                              </div>
+                              {task.subtasks?.length > 0 && (
+                                <ul className="mt-2 space-y-1 text-muted-foreground">
+                                  {task.subtasks.map((subtask, index) => (
+                                    <li key={index} className="flex items-start gap-2">
+                                      <span className="text-xs">•</span>
+                                      <span className="text-xs">{subtask}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
+                              {task.isPriority && (
+                                <span className="inline-block mt-2 text-xs text-primary font-medium">Priority Task</span>
+                              )}
+                            </div>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  <div className="flex justify-end pt-4">
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => deleteConversation(conversation.id)}
+                      className="flex items-center gap-2"
+                    >
+                      <Trash2 size={14} />
+                      Delete Note
+                    </Button>
+                  </div>
+                </CardContent>
+              )}
             </Card>
-          </Link>
-        ))}
+          ))
+        )}
       </div>
     </main>
-  )
+  );
 }
 

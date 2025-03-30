@@ -73,12 +73,48 @@ export default function Home() {
       const uint8Array = new Uint8Array(arrayBuffer);
       const blobArray = Array.from(uint8Array);
       
-      sessionStorage.setItem('currentRecording', JSON.stringify({
-        blob: blobArray,
-        type: audioBlob.type || 'audio/webm;codecs=opus',
-        duration: recordingTime,
-        timestamp: Date.now()
-      }))
+      // Try to clean up storage if needed
+      const cleanupStorage = () => {
+        try {
+          // Clear all items from sessionStorage
+          sessionStorage.clear();
+          console.log('Cleared session storage');
+          return true;
+        } catch (error) {
+          console.error('Error clearing storage:', error);
+          return false;
+        }
+      };
+
+      try {
+        // Try to save the recording
+        sessionStorage.setItem('currentRecording', JSON.stringify({
+          blob: blobArray,
+          type: audioBlob.type || 'audio/webm;codecs=opus',
+          duration: recordingTime,
+          timestamp: Date.now()
+        }));
+      } catch (error) {
+        // If we hit quota error, try to clean up and retry
+        if (error instanceof Error && error.name === 'QuotaExceededError') {
+          console.log('Storage quota exceeded, attempting cleanup...');
+          const cleaned = cleanupStorage();
+          
+          if (cleaned) {
+            // Retry saving after cleanup
+            sessionStorage.setItem('currentRecording', JSON.stringify({
+              blob: blobArray,
+              type: audioBlob.type || 'audio/webm;codecs=opus',
+              duration: recordingTime,
+              timestamp: Date.now()
+            }));
+          } else {
+            throw new Error('Unable to save recording due to storage limitations');
+          }
+        } else {
+          throw error;
+        }
+      }
       
       toast.success("Recording saved successfully!")
       
@@ -86,7 +122,7 @@ export default function Home() {
       router.push("/notes/new")
     } catch (error) {
       console.error("Error saving recording:", error)
-      toast.error("Error saving recording")
+      toast.error(error instanceof Error ? error.message : "Error saving recording")
     }
   }
 

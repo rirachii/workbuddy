@@ -140,12 +140,25 @@ Listen to this audio recording and provide:
    - Update LinkedIn profile by end of week
    Then specify: "Priority Focus: [the most important task]"
 
+FORMAT THE OUTPUT AS JSON:
+{
+  "summary": "string",
+  "tasks": [
+    {
+      "text": "string",
+      "deadline": "string"
+    }
+  ]
+}
+  
 Remember to:
 - Be empathetic and supportive in your analysis
 - Use their exact words when reflecting their experiences
 - Frame setbacks as learning opportunities
 - Keep feedback concise and actionable
 - Reference previous conversations when relevant to show progress`;
+
+
 
       // Create the content parts for the model
       const parts = [
@@ -160,42 +173,152 @@ Remember to:
       
       // Generate content from the model
       console.log('Calling Gemini API with GoogleGenAI SDK...');
-      const result = await model.generateContent({
-        contents: [{ role: "user", parts }],
-      });
       
-      const response = result.response;
-      const geminiText = response.text();
+      let retries = 0;
+      const maxRetries = 3;
+      let retryDelay = 1000; // Start with 1 second delay
       
-      // Updated parsing logic - now only for summary and tasks
-      const summaryMatch = geminiText.match(/1\.\s*Summary:\s*([\s\S]*?)(?=2\.\s*Tasks:|$)/i);
-      const tasksMatch = geminiText.match(/2\.\s*Tasks:\s*([\s\S]*?)(?=Priority Focus:|$)/i);
-      const priorityMatch = geminiText.match(/Priority Focus:\s*([^\n]+)/i);
-      
-      // Extract tasks into structured format
-      const tasksText = tasksMatch?.[1] || '';
-      const taskRegex = /[-•*]\s*([^:]+):?\s*(?:due|by|deadline)?[:\s]*([^,\n]*)/gi;
-      const tasks = [];
-      let taskMatch;
-      
-      while ((taskMatch = taskRegex.exec(tasksText)) !== null) {
-        const taskText = taskMatch[1]?.trim();
-        const deadline = taskMatch[2]?.trim() || 'No deadline specified';
-        
-        if (taskText) {
-          const task: {
-            id: string;
-            text: string;
-            deadline: string;
-            isPriority: boolean;
-          } = {
-            id: `task_${Date.now()}_${tasks.length}`,
-            text: taskText,
-            deadline: deadline,
-            isPriority: !!(priorityMatch && taskText.includes(priorityMatch[1].trim()))
-          };
-          tasks.push(task);
+      let response;
+      while (retries < maxRetries) {
+        try {
+          const result = await model.generateContent({
+            contents: [{ role: "user", parts }],
+          });
+          
+          // Check if the response has any error blocks
+          if (result.response.promptFeedback?.blockReason) {
+            throw new Error(`Content blocked: ${result.response.promptFeedback.blockReason}`);
+          }
+          
+          response = result.response;
+          break; // If successful, break out of retry loop
+          
+        } catch (error: unknown) {
+          console.error(`Attempt ${retries + 1} failed:`, error);
+          
+          // Check if it's a 503 error or other retryable error
+          if (
+            error instanceof Error && 
+            (error.message.includes('503') || error.message.includes('Service Unavailable'))
+          ) {
+            retries++;
+            
+            if (retries < maxRetries) {
+              console.log(`Retrying in ${retryDelay}ms...`);
+              await new Promise(resolve => setTimeout(resolve, retryDelay));
+              retryDelay *= 2; // Exponential backoff
+              continue;
+            }
+          }
+          
+          // Handle specific error types
+          if (error instanceof Error) {
+            if (error.message.includes('400')) {
+              throw new Error('Invalid request to Gemini API. Please check your input.');
+            } else if (error.message.includes('401')) {
+              throw new Error('Authentication failed. Please check your API key.');
+            } else if (error.message.includes('429')) {
+              throw new Error('Rate limit exceeded. Please try again later.');
+            } else if (error.message.includes('500')) {
+              throw new Error('Gemini API internal error. Please try again later.');
+            }
+          }
+          
+          // If it's not a handled error type, throw the original error
+          throw error;
         }
+      }
+      
+      if (!response) {
+        throw new Error('Failed to get response from Gemini API after multiple retries');
+      }
+      
+      // Save the raw response text
+      const geminiText = response.text();
+      console.log('Raw Gemini response:', geminiText);
+      
+      // Save response to a debug file for inspection
+      try {
+        const debugDir = path.join(os.tmpdir(), 'gemini-debug');
+        await fs.mkdir(debugDir, { recursive: true });
+        const debugFile = path.join(debugDir, `response_${Date.now()}.txt`);
+        await fs.writeFile(debugFile, geminiText);
+        console.log('Debug response saved to:', debugFile);
+      } catch (error) {
+        console.error('Failed to save debug file:', error);
+      }
+      
+      // Try to parse the response as JSON first
+      let parsedResponse;
+      try {
+        // Find JSON content between curly braces
+        const jsonMatch = geminiText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          parsedResponse = JSON.parse(jsonMatch[0]);
+        }
+      } catch (error) {
+        console.log('Failed to parse JSON response, falling back to regex parsing:', error);
+      }
+
+      interface Task {
+        id: string;
+        text: string;
+        deadline: string;
+        subtasks: string[];
+        isPriority: boolean;
+      }
+
+      let summary: string;
+      let tasks: Task[] = [];
+
+      if (parsedResponse) {
+        // Use the parsed JSON response
+        summary = parsedResponse.summary;
+        tasks = parsedResponse.tasks.map((task: any, index: number) => ({
+          id: `task_${Date.now()}_${index}`,
+          text: task.text,
+          deadline: task.deadline,
+          subtasks: [],
+          isPriority: false // Will be updated below if it's the priority task
+        }));
+      } else {
+        // Fallback to regex parsing
+        const summaryMatch = geminiText.match(/1\.\s*Summary:\s*([\s\S]*?)(?=2\.\s*Tasks:|$)/i);
+        const tasksMatch = geminiText.match(/2\.\s*Tasks:\s*([\s\S]*?)(?=Priority Focus:|$)/i);
+        const priorityMatch = geminiText.match(/Priority Focus:\s*([^\n]+)/i);
+        
+        summary = summaryMatch?.[1]?.trim() || 'Summary not available';
+        const tasksText = tasksMatch?.[1] || '';
+        
+        // Use regex to match bullet points and their content
+        const taskRegex = /[•*-]\s*([^,\n]+?)(?:,\s*|\s+by\s+|\s+within\s+)([^,\n]+)/g;
+        let match;
+
+        while ((match = taskRegex.exec(tasksText)) !== null) {
+          if (match[1]) {
+            const taskText = match[1].trim();
+            const deadline = match[2]?.trim() || 'No deadline specified';
+            
+            tasks.push({
+              id: `task_${Date.now()}_${tasks.length}`,
+              text: taskText,
+              deadline: deadline,
+              subtasks: [],
+              isPriority: !!(priorityMatch && priorityMatch[1].includes(taskText))
+            });
+          }
+        }
+      }
+
+      // Look for priority task in the full text
+      const priorityMatch = geminiText.match(/Priority Focus:\s*([^\n]+)/i);
+      if (priorityMatch) {
+        const priorityText = priorityMatch[1].trim();
+        // Update isPriority flag for the matching task
+        tasks = tasks.map(task => ({
+          ...task,
+          isPriority: task.text.includes(priorityText)
+        }));
       }
 
       // Create response object with metadata for storage
@@ -203,8 +326,8 @@ Remember to:
         id: `session_${Date.now()}`,
         timestamp: new Date().toISOString(),
         transcription: "", // Empty string since we're not using transcription anymore
-        summary: summaryMatch?.[1]?.trim() || 'Summary not available',
-        tasks: tasks.length > 0 ? tasks : [],
+        summary: summary,
+        tasks: tasks,
         rawResponse: geminiText, // Store the raw response for future reference
       };
       
