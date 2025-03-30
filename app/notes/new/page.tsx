@@ -12,6 +12,8 @@ import { StorageService } from "@/lib/services/storage-service"
 import { GeminiService } from "@/lib/services/gemini-service"
 import { config } from "@/lib/config"
 import { formatTimeWithHours } from "@/lib/utils"
+import { useConversations } from '@/lib/hooks/useConversations'
+import { ConversationResponse } from '@/lib/types/conversation'
 
 // Enum to track the processing stages
 enum ProcessingStage {
@@ -53,9 +55,10 @@ export default function NewNotePage() {
   })
   
   const geminiService = new GeminiService({
-    apiKey: config.gemini.apiKey,
-    endpoint: config.gemini.endpoint
+    apiKey: config.gemini.apiKey
   })
+
+  const { addConversation, getRecentConversations } = useConversations()
 
   // Initialize audio from recording or localstorage
   useEffect(() => {
@@ -170,6 +173,9 @@ export default function NewNotePage() {
       setProgress(100)
       
       toast.success("Processing complete!")
+      
+      // Store the new conversation
+      addConversation(geminiResult as ConversationResponse)
       
     } catch (error) {
       console.error("Error processing audio:", error)

@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Get the request body
-    const { audioUrl } = await request.json();
+    const { audioUrl, previousConversations } = await request.json();
     
     if (!audioUrl) {
       return NextResponse.json(
@@ -71,6 +71,7 @@ export async function POST(request: NextRequest) {
 
     // For debugging
     console.log('Processing audio URL:', audioUrl);
+    console.log('Previous conversations:', previousConversations?.length || 0);
     
     try {
       // Fetch the audio file and convert to base64
@@ -111,11 +112,44 @@ export async function POST(request: NextRequest) {
       });
       
       // Create a prompt for the model
-      const prompt = "Please transcribe this audio file, then provide a concise summary of its content, and extract any tasks or action items with their deadlines. Format the output as: 1. Transcription: (full text), 2. Summary: (concise summary), 3. Tasks: (list of tasks with deadlines)";
-      
+      const basePrompt = `# AI Workbuddy: Job Hunter Coach  
+*For professionals seeking employment - Combines career coaching, behavioral psychology, and tactical job search strategies*
+
+# CONVERSATION HISTORY
+${previousConversations?.map((conv: any, index: number) => `
+Session ${index + 1}:
+Summary: ${conv.summary}
+Tasks: ${conv.tasks.map((task: any) => `\n- ${task.text} (${task.deadline})`).join('')}
+Priority: ${conv.tasks.find((task: any) => task.isPriority)?.text || 'None specified'}
+`).join('\n\n') || 'No previous conversations'}
+
+# YOUR TASK 
+Listen to this audio recording and provide:
+
+1. Summary: Analyze the content following this template, considering the conversation history above:
+   - **Wins**: What have they done well during this job search? What are their strengths? What are their accomplishments?
+   - **Patterns**: What are the patterns in their behavior? What are the impact of their actions?
+   - **Next Step**: What concrete action should they take next?
+   - **Career Vision Check**: How does this align with their career goals?
+   - **Progress**: How does this compare to previous sessions? What improvements or changes do you notice?
+
+2. Tasks: Extract 3 specific tasks they should focus on, with deadlines. Choose ONE as the highest priority task.
+   Format as bullet points with deadlines, e.g.:
+   - Complete interview preparation document by next Tuesday
+   - Follow up with networking contact within 48 hours
+   - Update LinkedIn profile by end of week
+   Then specify: "Priority Focus: [the most important task]"
+
+Remember to:
+- Be empathetic and supportive in your analysis
+- Use their exact words when reflecting their experiences
+- Frame setbacks as learning opportunities
+- Keep feedback concise and actionable
+- Reference previous conversations when relevant to show progress`;
+
       // Create the content parts for the model
       const parts = [
-        { text: prompt },
+        { text: basePrompt },
         {
           inlineData: {
             mimeType: "audio/mp3",
@@ -133,10 +167,10 @@ export async function POST(request: NextRequest) {
       const response = result.response;
       const geminiText = response.text();
       
-      // Simple parsing of the response - this would need to be more robust in production
-      const transcriptionMatch = geminiText.match(/1\.\s*Transcription:\s*([\s\S]*?)(?=2\.\s*Summary:|$)/i);
-      const summaryMatch = geminiText.match(/2\.\s*Summary:\s*([\s\S]*?)(?=3\.\s*Tasks:|$)/i);
-      const tasksMatch = geminiText.match(/3\.\s*Tasks:\s*([\s\S]*?)$/i);
+      // Updated parsing logic - now only for summary and tasks
+      const summaryMatch = geminiText.match(/1\.\s*Summary:\s*([\s\S]*?)(?=2\.\s*Tasks:|$)/i);
+      const tasksMatch = geminiText.match(/2\.\s*Tasks:\s*([\s\S]*?)(?=Priority Focus:|$)/i);
+      const priorityMatch = geminiText.match(/Priority Focus:\s*([^\n]+)/i);
       
       // Extract tasks into structured format
       const tasksText = tasksMatch?.[1] || '';
@@ -149,19 +183,32 @@ export async function POST(request: NextRequest) {
         const deadline = taskMatch[2]?.trim() || 'No deadline specified';
         
         if (taskText) {
-          tasks.push({
+          const task: {
+            id: string;
+            text: string;
+            deadline: string;
+            isPriority: boolean;
+          } = {
             id: `task_${Date.now()}_${tasks.length}`,
             text: taskText,
-            deadline: deadline
-          });
+            deadline: deadline,
+            isPriority: !!(priorityMatch && taskText.includes(priorityMatch[1].trim()))
+          };
+          tasks.push(task);
         }
       }
-      
-      return NextResponse.json({
-        transcription: transcriptionMatch?.[1]?.trim() || 'Transcription not available',
+
+      // Create response object with metadata for storage
+      const responseData = {
+        id: `session_${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        transcription: "", // Empty string since we're not using transcription anymore
         summary: summaryMatch?.[1]?.trim() || 'Summary not available',
-        tasks: tasks.length > 0 ? tasks : []
-      });
+        tasks: tasks.length > 0 ? tasks : [],
+        rawResponse: geminiText, // Store the raw response for future reference
+      };
+      
+      return NextResponse.json(responseData);
       
     } catch (error) {
       console.error('Error processing audio:', error);
