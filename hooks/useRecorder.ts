@@ -9,6 +9,37 @@ interface RecorderState {
   error: string | null;
 }
 
+// Check if MediaRecorder is available in the browser
+const isMediaRecorderSupported = typeof window !== 'undefined' && 'MediaRecorder' in window;
+
+// Check for supported MIME types in order of preference
+const getSupportedMimeType = () => {
+  if (!isMediaRecorderSupported) {
+    console.warn('MediaRecorder is not supported in this browser');
+    return null;
+  }
+
+  const types = [
+    'audio/mp4',        // Safari's native format, can be easily converted to MP3
+    'audio/mpeg',       // MP3 (though rarely supported directly)
+    'audio/webm',       // Chrome/Edge default
+    'audio/ogg',        // Firefox alternative
+  ];
+
+  for (const type of types) {
+    if (MediaRecorder.isTypeSupported(type)) {
+      console.log(`Using audio format: ${type}`);
+      return type;
+    }
+  }
+
+  // Fallback to browser's default
+  console.log('No preferred format supported, using browser default');
+  return 'audio/webm';
+};
+
+const MIME_TYPE = getSupportedMimeType();
+
 export const useRecorder = () => {
   const [recorderState, setRecorderState] = useState<RecorderState>({
     isRecording: false,
@@ -53,7 +84,6 @@ export const useRecorder = () => {
     
     // Make sure we capture any remaining data before stopping
     if (recorderState.mediaRecorder.state !== 'inactive') {
-      // Request a final data chunk before stopping
       try {
         // Only request data if recording is active
         if (recorderState.mediaRecorder.state === 'recording') {
@@ -79,15 +109,43 @@ export const useRecorder = () => {
   }, [recorderState.mediaRecorder, stopTimer]);
 
   const startRecording = useCallback(async () => {
+    // Check if recording is supported
+    if (!isMediaRecorderSupported) {
+      setRecorderState(prev => ({
+        ...prev,
+        error: 'Recording is not supported in this browser'
+      }));
+      return;
+    }
+
+    // Check if we have a supported MIME type
+    if (!MIME_TYPE) {
+      setRecorderState(prev => ({
+        ...prev,
+        error: 'No supported audio format found'
+      }));
+      return;
+    }
+
     clearRecordingData();
     
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          channelCount: 1, // Mono audio for voice
+          sampleRate: 44100, // Standard sample rate
+          echoCancellation: true, // Enable echo cancellation
+          noiseSuppression: true, // Enable noise suppression
+        } 
+      });
       streamRef.current = stream;
       
       // Create media recorder with specific options
-      const recorderOptions = { mimeType: 'audio/webm' };
-      const recorder = new MediaRecorder(stream, recorderOptions);
+      const recorder = new MediaRecorder(stream, {
+        mimeType: MIME_TYPE,
+        audioBitsPerSecond: 128000 // 128kbps for good voice quality
+      });
+      
       mediaChunks.current = [];
       
       recorder.addEventListener('dataavailable', (event) => {
@@ -98,13 +156,11 @@ export const useRecorder = () => {
       });
       
       recorder.addEventListener('stop', () => {
-        // Specifically use 'audio/webm' MIME type which is well-supported
-        const audioBlob = new Blob(mediaChunks.current, { 
-          type: 'audio/webm;codecs=opus'
-        });
+        const audioBlob = new Blob(mediaChunks.current, { type: MIME_TYPE });
         const audioUrl = URL.createObjectURL(audioBlob);
         
         console.log('Recording complete - Blob size:', audioBlob.size, 'bytes');
+        console.log('Blob MIME type:', audioBlob.type);
         
         setRecorderState(prev => ({
           ...prev,
@@ -113,7 +169,7 @@ export const useRecorder = () => {
         }));
       });
       
-      // Start recording with smaller chunk intervals (250ms instead of 1000ms)
+      // Start recording with smaller chunk intervals
       recorder.start(250);
       
       // Start timer
@@ -137,7 +193,7 @@ export const useRecorder = () => {
       console.error('Error starting recording:', error);
       setRecorderState(prev => ({
         ...prev,
-        error: 'Failed to start recording. Please check microphone permissions.'
+        error: error instanceof Error ? error.message : 'Failed to start recording. Please check microphone permissions.'
       }));
     }
   }, [clearRecordingData]);

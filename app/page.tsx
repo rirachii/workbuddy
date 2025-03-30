@@ -6,9 +6,14 @@ import { Mic, MicOff, List, Settings, Play, Square, Trash2, Save } from "lucide-
 import Link from "next/link"
 import RecordingVisualizer from "@/components/recording-visualizer"
 import { useRouter } from "next/navigation"
-import { useRecorder } from "@/hooks/useRecorder"
 import { toast } from "sonner"
 import { Card, CardContent } from "@/components/ui/card"
+import { useAuth } from "@/lib/context/AuthContext"
+import { supabase } from "@/lib/supabase"
+import { Loader2 } from "lucide-react"
+import { useRecorder } from "@/hooks/useRecorder"
+import { convertToMp3, needsConversion } from "@/lib/utils/audio-converter"
+import { AuthModal } from "@/components/auth-modal"
 
 export default function Home() {
   const router = useRouter()
@@ -26,6 +31,18 @@ export default function Home() {
 
   const [isPlaying, setIsPlaying] = useState(false)
   const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null)
+  const { session, loading } = useAuth()
+  const [isSaving, setIsSaving] = useState(false)
+  const [showAuthModal, setShowAuthModal] = useState(false)
+
+  useEffect(() => {
+    // Show auth modal if user is not signed in and not loading
+    if (!loading && !session) {
+      setShowAuthModal(true)
+    } else {
+      setShowAuthModal(false)
+    }
+  }, [session, loading])
 
   useEffect(() => {
     // Initialize audio element when audioUrl changes
@@ -62,67 +79,78 @@ export default function Home() {
   }
 
   const handleSave = async () => {
-    if (!audioBlob) {
-      toast.error("No recording to save")
+    if (!session || !audioBlob) {
+      toast.error("Please sign in and record audio first")
       return
     }
 
     try {
-      // Convert blob to array buffer
-      const arrayBuffer = await audioBlob.arrayBuffer();
-      const uint8Array = new Uint8Array(arrayBuffer);
-      const blobArray = Array.from(uint8Array);
-      
-      // Try to clean up storage if needed
-      const cleanupStorage = () => {
-        try {
-          // Clear all items from sessionStorage
-          sessionStorage.clear();
-          console.log('Cleared session storage');
-          return true;
-        } catch (error) {
-          console.error('Error clearing storage:', error);
-          return false;
-        }
-      };
+      setIsSaving(true)
 
+      // Convert to MP3 if needed
+      let finalBlob: Blob;
       try {
-        // Try to save the recording
-        sessionStorage.setItem('currentRecording', JSON.stringify({
-          blob: blobArray,
-          type: audioBlob.type || 'audio/webm;codecs=opus',
-          duration: recordingTime,
-          timestamp: Date.now()
-        }));
+        finalBlob = needsConversion(audioBlob) 
+          ? await convertToMp3(audioBlob)
+          : audioBlob;
       } catch (error) {
-        // If we hit quota error, try to clean up and retry
-        if (error instanceof Error && error.name === 'QuotaExceededError') {
-          console.log('Storage quota exceeded, attempting cleanup...');
-          const cleaned = cleanupStorage();
-          
-          if (cleaned) {
-            // Retry saving after cleanup
-            sessionStorage.setItem('currentRecording', JSON.stringify({
-              blob: blobArray,
-              type: audioBlob.type || 'audio/webm;codecs=opus',
-              duration: recordingTime,
-              timestamp: Date.now()
-            }));
-          } else {
-            throw new Error('Unable to save recording due to storage limitations');
-          }
-        } else {
-          throw error;
-        }
+        console.error("Error converting audio:", error);
+        throw new Error("Failed to convert audio recording. Please try again.");
       }
       
-      toast.success("Recording saved successfully!")
+      // Generate unique filename
+      const timestamp = new Date().getTime()
+      const filename = `${timestamp}-${session.user.id}.mp3`
+
+      // Upload to Supabase Storage
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from("voice-memos")
+        .upload(`${session.user.id}/${filename}`, finalBlob, {
+          contentType: "audio/mp3",
+          cacheControl: "3600",
+        })
+
+      if (uploadError) {
+        console.error("Upload error:", uploadError);
+        throw new Error("Failed to upload audio file: " + uploadError.message);
+      }
+
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from("voice-memos")
+        .getPublicUrl(`${session.user.id}/${filename}`)
+
+      // Create initial memo with just the audio URL
+      const { data: memo, error: memoError } = await supabase
+        .from("memos")
+        .insert({
+          user_id: session.user.id,
+          title: `Voice Memo ${new Date().toLocaleString()}`,
+          storage_path: `${session.user.id}/${filename}`,
+        })
+        .select()
+        .single()
+
+      if (memoError) {
+        console.error("Memo creation error:", memoError);
+        throw new Error("Failed to create memo: " + memoError.message);
+      }
+
+      if (!memo) {
+        throw new Error("Failed to create memo: No data returned");
+      }
+
+      toast.success("Recording saved! Processing your audio...")
+      resetRecording()
       
-      // Navigate to the processing page
-      router.push("/notes/new")
+      // Redirect to the new note page with the memo ID
+      router.push(`/notes/new?id=${memo.id}`)
     } catch (error) {
       console.error("Error saving recording:", error)
-      toast.error(error instanceof Error ? error.message : "Error saving recording")
+      const errorMessage = error instanceof Error ? error.message : "An unexpected error occurred"
+      toast.error(errorMessage)
+    } finally {
+      setIsSaving(false)
     }
   }
 
@@ -153,8 +181,19 @@ export default function Home() {
     }
   }, [isRecording, recordingTime, stopRecording])
 
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="animate-spin">
+          <Loader2 className="h-8 w-8" />
+        </div>
+      </div>
+    )
+  }
+
   return (
     <main className="flex min-h-screen flex-col items-center p-4 bg-background">
+      <AuthModal isOpen={showAuthModal} />
       <div className="w-full max-w-md flex flex-col items-center justify-between min-h-screen">
         <div className="w-full pt-8">
           <h1 className="text-2xl font-bold text-center mb-2">Voice Memo AI</h1>
@@ -204,8 +243,13 @@ export default function Home() {
                       variant="default" 
                       className="rounded-full flex items-center gap-2"
                       onClick={handleSave}
+                      disabled={isSaving}
                     >
-                      <Save size={18} />
+                      {isSaving ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Save size={18} />
+                      )}
                       Save and Process
                     </Button>
                   </div>

@@ -1,25 +1,28 @@
-import type React from "react"
-import "@/app/globals.css"
-import { ThemeProvider } from "@/components/theme-provider"
+import type { Metadata } from "next"
+import { Inter } from "next/font/google"
+import "./globals.css"
+import { Toaster } from "sonner"
+import { AuthProvider } from "@/lib/context/AuthContext"
 
-export const metadata = {
-  title: 'Job Hunter AI',
-  description: 'AI-powered voice memo app',
-  generator: 'v0.dev'
-};
+const inter = Inter({ subsets: ["latin"] })
+
+export const metadata: Metadata = {
+  title: "Voice Memo AI",
+  description: "Record, transcribe, and organize your thoughts",
+}
 
 export default function RootLayout({
   children,
-}: {
+}: Readonly<{
   children: React.ReactNode
-}) {
+}>) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <head />
-      <body>
-        <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+    <html lang="en">
+      <body className={inter.className}>
+        <AuthProvider>
           {children}
-        </ThemeProvider>
+          <Toaster />
+        </AuthProvider>
       </body>
     </html>
   )

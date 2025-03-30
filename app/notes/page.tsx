@@ -1,26 +1,132 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Plus, ChevronRight, Trash2 } from 'lucide-react';
-import { useConversations } from '@/lib/hooks/useConversations';
 import { formatDistanceToNow } from 'date-fns';
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { toast } from 'sonner';
+import { useAuth } from '@/lib/context/AuthContext';
+
+interface Todo {
+  id: string;
+  title: string;
+  due_date: string;
+  is_completed: boolean;
+  memo_id: string;
+}
+
+interface Memo {
+  id: string;
+  title: string;
+  summary: string;
+  created_at: string;
+  storage_path: string;
+  todos: Todo[];
+}
 
 export default function NotesPage() {
-  const { conversations, deleteConversation } = useConversations();
+  const { session } = useAuth();
+  const supabase = createClientComponentClient();
+  const [memos, setMemos] = useState<Memo[]>([]);
   const [expandedNote, setExpandedNote] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   const toggleExpand = (id: string) => {
     setExpandedNote(expandedNote === id ? null : id);
   };
 
+  // Fetch memos and their associated todos
+  useEffect(() => {
+    const fetchMemos = async () => {
+      if (!session?.user.id) {
+        toast.error("Please sign in to view your notes");
+        return;
+      }
+
+      try {
+        setIsLoading(true);
+        
+        // Fetch memos
+        const { data: memosData, error: memosError } = await supabase
+          .from('memos')
+          .select('*')
+          .eq('user_id', session.user.id)
+          .order('created_at', { ascending: false });
+
+        if (memosError) throw memosError;
+
+        // Fetch todos for all memos
+        const { data: todosData, error: todosError } = await supabase
+          .from('todos')
+          .select('*')
+          .eq('user_id', session.user.id)
+          .in('memo_id', memosData.map(memo => memo.id));
+
+        if (todosError) throw todosError;
+
+        // Combine memos with their todos
+        const memosWithTodos = memosData.map(memo => ({
+          ...memo,
+          todos: todosData.filter(todo => todo.memo_id === memo.id) || []
+        }));
+
+        setMemos(memosWithTodos);
+      } catch (error) {
+        console.error('Error fetching memos:', error);
+        toast.error('Failed to load notes');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchMemos();
+  }, [session, supabase]);
+
+  const deleteMemo = async (memoId: string) => {
+    try {
+      // Delete associated todos first
+      const { error: todosError } = await supabase
+        .from('todos')
+        .delete()
+        .eq('memo_id', memoId);
+
+      if (todosError) throw todosError;
+
+      // Then delete the memo
+      const { error: memoError } = await supabase
+        .from('memos')
+        .delete()
+        .eq('id', memoId);
+
+      if (memoError) throw memoError;
+
+      // Update local state
+      setMemos(memos.filter(memo => memo.id !== memoId));
+      toast.success('Note deleted successfully');
+    } catch (error) {
+      console.error('Error deleting memo:', error);
+      toast.error('Failed to delete note');
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <main className="flex min-h-screen flex-col p-4 bg-background">
+        <div className="flex items-center justify-center h-full">
+          <p className="text-muted-foreground">Loading notes...</p>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="flex min-h-screen flex-col p-4 bg-background">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">My Notes</h1>
-        <Link href="/notes/new">
+        <Link href="/">
           <Button>
             <Plus size={16} className="mr-2" />
             New Recording
@@ -29,7 +135,7 @@ export default function NotesPage() {
       </div>
 
       <div className="space-y-4">
-        {conversations.length === 0 ? (
+        {memos.length === 0 ? (
           <Card>
             <CardContent className="flex flex-col items-center justify-center py-8 text-center">
               <p className="text-muted-foreground mb-4">No notes yet. Start by recording your first note!</p>
@@ -42,67 +148,54 @@ export default function NotesPage() {
             </CardContent>
           </Card>
         ) : (
-          conversations.map((conversation) => (
-            <Card key={conversation.id} className="hover:shadow-md transition-shadow">
-              <CardHeader className="cursor-pointer" onClick={() => toggleExpand(conversation.id)}>
+          memos.map((memo) => (
+            <Card key={memo.id} className="hover:shadow-md transition-shadow">
+              <CardHeader className="cursor-pointer" onClick={() => toggleExpand(memo.id)}>
                 <div className="flex items-center justify-between">
                   <div className="space-y-1">
                     <CardTitle className="text-lg">
-                      Note from {formatDistanceToNow(new Date(conversation.timestamp), { addSuffix: true })}
+                      {memo.title || `Note from ${formatDistanceToNow(new Date(memo.created_at), { addSuffix: true })}`}
                     </CardTitle>
                     <p className="text-sm text-muted-foreground">
-                      {conversation.tasks.length} tasks identified
+                      {memo.todos.length} tasks identified
                     </p>
                   </div>
                   <ChevronRight
                     size={20}
                     className={`transform transition-transform ${
-                      expandedNote === conversation.id ? 'rotate-90' : ''
+                      expandedNote === memo.id ? 'rotate-90' : ''
                     }`}
                   />
                 </div>
               </CardHeader>
 
-              {expandedNote === conversation.id && (
+              {expandedNote === memo.id && (
                 <CardContent className="space-y-4 pt-0">
                   <div>
                     <h3 className="font-medium mb-2">Summary</h3>
                     <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                      {conversation.summary}
+                      {memo.summary}
                     </p>
                   </div>
 
                   <div>
                     <h3 className="font-medium mb-2">Tasks</h3>
                     <ul className="space-y-2">
-                      {conversation.tasks.map((task) => (
+                      {memo.todos.map((todo) => (
                         <li
-                          key={task.id}
+                          key={todo.id}
                           className={`text-sm p-2 rounded-md border ${
-                            task.isPriority ? 'bg-primary/10 border-primary/20' : 'bg-muted border-muted-foreground/20'
+                            todo.is_completed ? 'bg-muted border-muted-foreground/20' : 'bg-primary/10 border-primary/20'
                           }`}
                         >
                           <div className="flex items-start justify-between gap-2">
                             <div className="flex-1">
                               <div className="flex items-start justify-between">
-                                <span className="font-medium">{task.text}</span>
+                                <span className="font-medium">{todo.title}</span>
                                 <span className="text-xs text-muted-foreground whitespace-nowrap ml-2">
-                                  {task.deadline}
+                                  {formatDistanceToNow(new Date(todo.due_date), { addSuffix: true })}
                                 </span>
                               </div>
-                              {task.subtasks?.length > 0 && (
-                                <ul className="mt-2 space-y-1 text-muted-foreground">
-                                  {task.subtasks.map((subtask, index) => (
-                                    <li key={index} className="flex items-start gap-2">
-                                      <span className="text-xs">•</span>
-                                      <span className="text-xs">{subtask}</span>
-                                    </li>
-                                  ))}
-                                </ul>
-                              )}
-                              {task.isPriority && (
-                                <span className="inline-block mt-2 text-xs text-primary font-medium">Priority Task</span>
-                              )}
                             </div>
                           </div>
                         </li>
@@ -114,7 +207,7 @@ export default function NotesPage() {
                     <Button
                       variant="destructive"
                       size="sm"
-                      onClick={() => deleteConversation(conversation.id)}
+                      onClick={() => deleteMemo(memo.id)}
                       className="flex items-center gap-2"
                     >
                       <Trash2 size={14} />

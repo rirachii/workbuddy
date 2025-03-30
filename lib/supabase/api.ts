@@ -1,8 +1,10 @@
 import { supabase } from './client'
 import { Database } from './types'
 
-type Memo = Database['public']['Tables']['memos']['Row']
-type Todo = Database['public']['Tables']['todos']['Row']
+type Memo = Database['public']['Tables']['memos']['Insert']
+type MemoRow = Database['public']['Tables']['memos']['Row']
+type Todo = Database['public']['Tables']['todos']['Insert']
+type TodoRow = Database['public']['Tables']['todos']['Row']
 
 // Memo functions
 export async function createMemo(memo: Omit<Memo, 'id' | 'created_at' | 'updated_at'>) {
@@ -13,7 +15,7 @@ export async function createMemo(memo: Omit<Memo, 'id' | 'created_at' | 'updated
     .single()
   
   if (error) throw error
-  return data
+  return data as MemoRow
 }
 
 export async function getMemos(userId: string) {
@@ -24,7 +26,7 @@ export async function getMemos(userId: string) {
     .order('created_at', { ascending: false })
   
   if (error) throw error
-  return data
+  return data as MemoRow[]
 }
 
 export async function getMemoById(id: string) {
@@ -35,10 +37,10 @@ export async function getMemoById(id: string) {
     .single()
   
   if (error) throw error
-  return data
+  return data as MemoRow
 }
 
-export async function updateMemo(id: string, updates: Partial<Memo>) {
+export async function updateMemo(id: string, updates: Partial<MemoRow>) {
   const { data, error } = await supabase
     .from('memos')
     .update(updates)
@@ -47,7 +49,7 @@ export async function updateMemo(id: string, updates: Partial<Memo>) {
     .single()
   
   if (error) throw error
-  return data
+  return data as MemoRow
 }
 
 export async function deleteMemo(id: string) {
@@ -68,7 +70,7 @@ export async function createTodo(todo: Omit<Todo, 'id' | 'created_at' | 'updated
     .single()
   
   if (error) throw error
-  return data
+  return data as TodoRow
 }
 
 export async function getTodos(userId: string) {
@@ -79,7 +81,7 @@ export async function getTodos(userId: string) {
     .order('created_at', { ascending: false })
   
   if (error) throw error
-  return data
+  return data as TodoRow[]
 }
 
 export async function getTodosByMemoId(memoId: string) {
@@ -90,10 +92,10 @@ export async function getTodosByMemoId(memoId: string) {
     .order('created_at', { ascending: false })
   
   if (error) throw error
-  return data
+  return data as TodoRow[]
 }
 
-export async function updateTodo(id: string, updates: Partial<Todo>) {
+export async function updateTodo(id: string, updates: Partial<TodoRow>) {
   const { data, error } = await supabase
     .from('todos')
     .update(updates)
@@ -102,7 +104,7 @@ export async function updateTodo(id: string, updates: Partial<Todo>) {
     .single()
   
   if (error) throw error
-  return data
+  return data as TodoRow
 }
 
 export async function deleteTodo(id: string) {
@@ -123,5 +125,5 @@ export async function toggleTodoComplete(id: string, isCompleted: boolean) {
     .single()
   
   if (error) throw error
-  return data
+  return data as TodoRow
 } 
