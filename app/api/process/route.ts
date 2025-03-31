@@ -8,6 +8,9 @@ import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from '@google/ge
 import { getAuthenticatedUser, supabaseAdmin } from '@/lib/supabase/server';
 import crypto from 'crypto';
 
+// Specify that this is a Node.js API route
+export const runtime = 'nodejs';
+
 const execAsync = promisify(exec);
 
 async function convertWebmToMp3(webmBuffer: Buffer): Promise<Buffer> {
