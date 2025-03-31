@@ -54,6 +54,18 @@ export function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
     e.preventDefault()
     setIsLoading(true)
 
+    if (password.length < 8) {
+      toast.error('Password must be at least 8 characters long')
+      setIsLoading(false)
+      return
+    }
+
+    if (!/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password)) {
+      toast.error('Password must contain uppercase, lowercase letters and numbers')
+      setIsLoading(false)
+      return
+    }
+
     try {
       const { data, error } = await supabase.auth.signUp({
         email,
@@ -64,7 +76,13 @@ export function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
       })
 
       if (error) {
-        throw error
+        if (error.message.includes('email')) {
+          throw new Error('Invalid email address')
+        } else if (error.message.includes('password')) {
+          throw new Error('Password does not meet requirements')
+        } else {
+          throw new Error('Error creating account')
+        }
       }
 
       toast.success('Check your email to confirm your account!')

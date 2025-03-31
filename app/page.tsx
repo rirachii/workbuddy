@@ -1,16 +1,14 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
-import { Mic, MicOff, List, Settings, Play, Square, Trash2, Save } from "lucide-react"
+import { Mic, MicOff, List, Settings, Play, Square, Trash2, Save, Loader2 } from "lucide-react"
 import Link from "next/link"
-import RecordingVisualizer from "@/components/recording-visualizer"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Card, CardContent } from "@/components/ui/card"
 import { useAuth } from "@/components/providers/supabase-auth-provider"
 import { getSupabaseClient } from "@/lib/supabase/client"
-import { Loader2 } from "lucide-react"
 import { useRecorder } from "@/hooks/useRecorder"
 import { convertToMp3, needsConversion } from "@/lib/utils/audio-converter"
 import { AuthModal } from "@/components/auth-modal"
@@ -23,6 +21,10 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog"
+import dynamic from "next/dynamic"
+
+// Dynamically import AudioSphere with no SSR
+const AudioSphere = dynamic<any>(() => import("@/components/AudioSphere"), { ssr: false })
 
 export default function Home() {
   const router = useRouter()
@@ -45,6 +47,9 @@ export default function Home() {
   const [showAuthModal, setShowAuthModal] = useState(false)
   const supabase = getSupabaseClient()
   const [showWelcomeDialog, setShowWelcomeDialog] = useState(false)
+  const [audioData, setAudioData] = useState<Float32Array>()
+  const analyserRef = useRef<AnalyserNode>()
+  const animationFrameRef = useRef<number>()
 
   useEffect(() => {
     // Show auth modal if user is not signed in and not loading
@@ -132,6 +137,20 @@ export default function Home() {
       return
     }
 
+    // Add file size validation
+    const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
+    if (audioBlob.size > MAX_FILE_SIZE) {
+      toast.error("Recording is too large. Maximum size is 100MB")
+      return
+    }
+
+    // Add file type validation
+    const allowedTypes = ['audio/wav', 'audio/webm', 'audio/ogg', 'audio/mp3'];
+    if (!allowedTypes.includes(audioBlob.type)) {
+      toast.error("Invalid audio format")
+      return
+    }
+
     try {
       setIsSaving(true)
 
@@ -213,6 +232,43 @@ export default function Home() {
     }
   }, [error])
 
+  // Initialize audio analyzer when recording starts
+  useEffect(() => {
+    if (isRecording) {
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
+      const analyser = audioContext.createAnalyser()
+      analyser.fftSize = 256
+      analyserRef.current = analyser
+
+      // Get microphone stream
+      navigator.mediaDevices.getUserMedia({ audio: true })
+        .then(stream => {
+          const source = audioContext.createMediaStreamSource(stream)
+          source.connect(analyser)
+
+          // Start analyzing audio
+          const dataArray = new Float32Array(analyser.frequencyBinCount)
+          const updateData = () => {
+            analyser.getFloatTimeDomainData(dataArray)
+            setAudioData(dataArray)
+            animationFrameRef.current = requestAnimationFrame(updateData)
+          }
+          updateData()
+        })
+        .catch(err => {
+          console.error("Error accessing microphone:", err)
+          toast.error("Could not access microphone")
+        })
+
+      return () => {
+        if (animationFrameRef.current) {
+          cancelAnimationFrame(animationFrameRef.current)
+        }
+        audioContext.close()
+      }
+    }
+  }, [isRecording])
+
   if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -267,26 +323,23 @@ export default function Home() {
         </div>
 
         <div className="flex-1 flex flex-col items-center justify-center w-full">
-          {/* Visualizer and timer */}
+          {/* Audio Sphere */}
+          <div className="mb-8 w-full">
+            <AudioSphere isRecording={isRecording} audioData={audioData} />
+          </div>
+
+          {/* Timer */}
           {isRecording && (
-            <>
-              <div className="mb-8">
-                <RecordingVisualizer isActive={true} />
-              </div>
-              <div className="text-2xl font-mono mb-8 text-red-500">
-                {formatTime(recordingTime)}
-              </div>
-            </>
+            <div className="text-2xl font-mono mb-8 text-red-500">
+              {formatTime(recordingTime)}
+            </div>
           )}
 
-          {/* Audio playback controls (only shown when recording is complete) */}
+          {/* Audio playback controls */}
           {!isRecording && audioUrl && (
             <div className="w-full mb-8">
               <Card className="p-4">
                 <CardContent className="p-0 flex flex-col items-center">
-                  <div className="mb-4 w-full">
-                    <RecordingVisualizer isActive={isPlaying} />
-                  </div>
                   <div className="text-lg font-mono mb-4">{formatTime(recordingTime)}</div>
                   <div className="flex gap-3">
                     <Button 
@@ -332,7 +385,7 @@ export default function Home() {
             </div>
           )}
 
-          {/* Recording button (only shown when no recording is in progress or no audio exists) */}
+          {/* Recording button */}
           {!audioUrl && (
             <>
               <Button
