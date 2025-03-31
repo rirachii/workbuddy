@@ -1,4 +1,4 @@
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { createBrowserClient } from '@supabase/ssr';
 import { useEffect, useState } from 'react';
 import type { User, Session } from '@supabase/supabase-js';
 
@@ -9,7 +9,11 @@ interface AuthState {
 }
 
 export function useAuth() {
-  const supabase = createClientComponentClient();
+  const supabase = createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
+  
   const [authState, setAuthState] = useState<AuthState>({
     session: null,
     user: null,
