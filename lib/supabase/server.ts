@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
 import { Database } from './types'
 import { headers } from 'next/headers'
+import { createServerClient, type CookieOptions } from '@supabase/ssr'
 
 if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
   throw new Error('Missing env.NEXT_PUBLIC_SUPABASE_URL')
@@ -20,23 +21,24 @@ export const supabaseAdmin = createClient<Database>(
 export async function getSupabaseServerClient() {
   const cookieStore = cookies()
   
-  return createClient<Database>(
+  return createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      auth: {
+        persistSession: true
+      },
       cookies: {
         get(name: string) {
           return cookieStore.get(name)?.value
         },
-        set(name: string, value: string, options: any) {
-          // This is a server component, so we can't set cookies directly
-          // They will be set by the client-side auth
+        set(name: string, value: string, options: CookieOptions) {
+          cookieStore.set(name, value, options)
         },
-        remove(name: string, options: any) {
-          // This is a server component, so we can't remove cookies directly
-          // They will be removed by the client-side auth
+        remove(name: string, options: CookieOptions) {
+          cookieStore.set(name, '', { ...options, maxAge: 0 })
         }
-      },
+      }
     }
   )
 }
@@ -44,42 +46,36 @@ export async function getSupabaseServerClient() {
 // Helper function to get authenticated user from request
 export async function getAuthenticatedUser() {
   try {
-    const headersList = await headers();
-    const authHeader = headersList.get('authorization');
-    
+    const supabase = await getSupabaseServerClient()
+    const headersList = headers()
+
+    // Check for Bearer token in Authorization header
+    const authHeader = headersList.get('Authorization')
     if (authHeader?.startsWith('Bearer ')) {
-      const token = authHeader.split(' ')[1];
-      const supabase = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-      );
-      
-      const { data: { user }, error } = await supabase.auth.getUser(token);
-      
+      const token = authHeader.split(' ')[1]
+      const { data: { user }, error } = await supabase.auth.getUser(token)
       if (error) {
-        console.error('Token auth error:', error);
-        // Fall through to cookie auth
-      } else if (user) {
-        return user;
+        console.error('Token authentication error:', error)
+        throw error
+      }
+      if (user) {
+        return user
       }
     }
-    
-    // Try cookie-based auth
-    const supabase = await getSupabaseServerClient();
-    const { data: { session }, error } = await supabase.auth.getSession();
-    
+
+    // Fall back to cookie-based authentication
+    const { data: { session }, error } = await supabase.auth.getSession()
     if (error) {
-      console.error('Cookie auth error:', error);
-      throw error;
+      console.error('Cookie authentication error:', error)
+      throw error
     }
-    
     if (!session?.user) {
-      throw new Error('No valid session found');
+      throw new Error('No authenticated user found')
     }
-    
-    return session.user;
+
+    return session.user
   } catch (error) {
-    console.error('getAuthenticatedUser error:', error);
-    throw new Error('Unauthorized - Please sign in');
+    console.error('Authentication error:', error)
+    throw error
   }
 } 

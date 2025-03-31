@@ -8,8 +8,8 @@ import RecordingVisualizer from "@/components/recording-visualizer"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Card, CardContent } from "@/components/ui/card"
-import { useAuth } from "@/lib/context/AuthContext"
-import { supabase } from "@/lib/supabase"
+import { useAuth } from "@/components/providers/supabase-auth-provider"
+import { getSupabaseClient } from "@/lib/supabase/client"
 import { Loader2 } from "lucide-react"
 import { useRecorder } from "@/hooks/useRecorder"
 import { convertToMp3, needsConversion } from "@/lib/utils/audio-converter"
@@ -31,18 +31,19 @@ export default function Home() {
 
   const [isPlaying, setIsPlaying] = useState(false)
   const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null)
-  const { session, loading } = useAuth()
+  const { user, isLoading } = useAuth()
   const [isSaving, setIsSaving] = useState(false)
   const [showAuthModal, setShowAuthModal] = useState(false)
+  const supabase = getSupabaseClient()
 
   useEffect(() => {
     // Show auth modal if user is not signed in and not loading
-    if (!loading && !session) {
+    if (!isLoading && !user) {
       setShowAuthModal(true)
     } else {
       setShowAuthModal(false)
     }
-  }, [session, loading])
+  }, [user, isLoading])
 
   useEffect(() => {
     // Initialize audio element when audioUrl changes
@@ -79,7 +80,7 @@ export default function Home() {
   }
 
   const handleSave = async () => {
-    if (!session || !audioBlob) {
+    if (!user || !audioBlob) {
       toast.error("Please sign in and record audio first")
       return
     }
@@ -100,12 +101,12 @@ export default function Home() {
       
       // Generate unique filename
       const timestamp = new Date().getTime()
-      const filename = `${timestamp}-${session.user.id}.mp3`
+      const filename = `${timestamp}-${user.id}.mp3`
 
       // Upload to Supabase Storage
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from("voice-memos")
-        .upload(`${session.user.id}/${filename}`, finalBlob, {
+        .upload(`${user.id}/${filename}`, finalBlob, {
           contentType: "audio/mp3",
           cacheControl: "3600",
         })
@@ -118,15 +119,15 @@ export default function Home() {
       // Get public URL
       const { data: { publicUrl } } = supabase.storage
         .from("voice-memos")
-        .getPublicUrl(`${session.user.id}/${filename}`)
+        .getPublicUrl(`${user.id}/${filename}`)
 
       // Create initial memo with just the audio URL
       const { data: memo, error: memoError } = await supabase
         .from("memos")
         .insert({
-          user_id: session.user.id,
+          user_id: user.id,
           title: `Voice Memo ${new Date().toLocaleString()}`,
-          storage_path: `${session.user.id}/${filename}`,
+          storage_path: `${user.id}/${filename}`,
         })
         .select()
         .single()
@@ -181,7 +182,7 @@ export default function Home() {
     }
   }, [isRecording, recordingTime, stopRecording])
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="animate-spin">
@@ -193,7 +194,7 @@ export default function Home() {
 
   return (
     <main className="flex min-h-screen flex-col items-center p-4 bg-background">
-      <AuthModal isOpen={showAuthModal} />
+      {showAuthModal && <AuthModal isOpen={showAuthModal} onOpenChange={setShowAuthModal} />}
       <div className="w-full max-w-md flex flex-col items-center justify-between min-h-screen">
         <div className="w-full pt-8">
           <h1 className="text-2xl font-bold text-center mb-2">Voice Memo AI</h1>

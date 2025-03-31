@@ -6,6 +6,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from '@google/generative-ai';
 import { getAuthenticatedUser, supabaseAdmin } from '@/lib/supabase/server';
+import crypto from 'crypto';
 
 const execAsync = promisify(exec);
 
@@ -370,7 +371,10 @@ export async function POST(request: NextRequest) {
         timestamp: new Date().toISOString(),
         transcription: "", // Empty string since we're not using transcription anymore
         summary: flattenedSummary,
-        tasks: parsedResponse.tasks,
+        tasks: parsedResponse.tasks.map((task: any) => ({
+          ...task,
+          id: crypto.randomUUID()
+        })),
         priority_focus: parsedResponse["Priority Focus"] || parsedResponse.tasks[0].text,
         rawResponse: geminiText, // Store the raw response for future reference
       };

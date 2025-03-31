@@ -1,4 +1,4 @@
-import { supabase } from './client'
+import { supabase } from '../supabase'
 import { Database } from './types'
 
 type Memo = Database['public']['Tables']['memos']['Insert']

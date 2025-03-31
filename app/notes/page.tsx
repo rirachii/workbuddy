@@ -6,30 +6,34 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Plus, ChevronRight, Trash2 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { toast } from 'sonner';
-import { useAuth } from '@/lib/context/AuthContext';
+import { useAuth } from '@/components/providers/supabase-auth-provider';
+import { getSupabaseClient } from '@/lib/supabase/client';
 
 interface Todo {
   id: string;
   title: string;
-  due_date: string;
-  is_completed: boolean;
+  due_date: string | null;
+  is_completed: boolean | null;
   memo_id: string;
+  user_id: string;
+  created_at: string | null;
+  updated_at: string | null;
+  description: string | null;
 }
 
 interface Memo {
   id: string;
   title: string;
-  summary: string;
-  created_at: string;
-  storage_path: string;
+  summary: string | null;
+  created_at: string | null;
+  storage_path: string | null;
   todos: Todo[];
+  user_id: string;
 }
 
 export default function NotesPage() {
-  const { session } = useAuth();
-  const supabase = createClientComponentClient();
+  const { user, isLoading: authLoading } = useAuth();
   const [memos, setMemos] = useState<Memo[]>([]);
   const [expandedNote, setExpandedNote] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -41,19 +45,22 @@ export default function NotesPage() {
   // Fetch memos and their associated todos
   useEffect(() => {
     const fetchMemos = async () => {
-      if (!session?.user.id) {
-        toast.error("Please sign in to view your notes");
+      if (!user?.id) {
+        if (!authLoading) {
+          toast.error("Please sign in to view your notes");
+        }
         return;
       }
 
       try {
         setIsLoading(true);
+        const supabase = getSupabaseClient();
         
         // Fetch memos
         const { data: memosData, error: memosError } = await supabase
           .from('memos')
           .select('*')
-          .eq('user_id', session.user.id)
+          .eq('user_id', user.id)
           .order('created_at', { ascending: false });
 
         if (memosError) throw memosError;
@@ -62,7 +69,7 @@ export default function NotesPage() {
         const { data: todosData, error: todosError } = await supabase
           .from('todos')
           .select('*')
-          .eq('user_id', session.user.id)
+          .eq('user_id', user.id)
           .in('memo_id', memosData.map(memo => memo.id));
 
         if (todosError) throw todosError;
@@ -70,10 +77,11 @@ export default function NotesPage() {
         // Combine memos with their todos
         const memosWithTodos = memosData.map(memo => ({
           ...memo,
-          todos: todosData.filter(todo => todo.memo_id === memo.id) || []
+          todos: todosData.filter(todo => todo.memo_id === memo.id) || [],
+          created_at: memo.created_at || new Date().toISOString()
         }));
 
-        setMemos(memosWithTodos);
+        setMemos(memosWithTodos as Memo[]);
       } catch (error) {
         console.error('Error fetching memos:', error);
         toast.error('Failed to load notes');
@@ -83,10 +91,12 @@ export default function NotesPage() {
     };
 
     fetchMemos();
-  }, [session, supabase]);
+  }, [user, authLoading]);
 
   const deleteMemo = async (memoId: string) => {
     try {
+      const supabase = getSupabaseClient();
+      
       // Delete associated todos first
       const { error: todosError } = await supabase
         .from('todos')
@@ -154,7 +164,9 @@ export default function NotesPage() {
                 <div className="flex items-center justify-between">
                   <div className="space-y-1">
                     <CardTitle className="text-lg">
-                      {memo.title || `Note from ${formatDistanceToNow(new Date(memo.created_at), { addSuffix: true })}`}
+                      {memo.title || `Note from ${memo.created_at ? 
+                        formatDistanceToNow(new Date(memo.created_at), { addSuffix: true }) : 
+                        'Unknown date'}`}
                     </CardTitle>
                     <p className="text-sm text-muted-foreground">
                       {memo.todos.length} tasks identified
@@ -193,7 +205,7 @@ export default function NotesPage() {
                               <div className="flex items-start justify-between">
                                 <span className="font-medium">{todo.title}</span>
                                 <span className="text-xs text-muted-foreground whitespace-nowrap ml-2">
-                                  {formatDistanceToNow(new Date(todo.due_date), { addSuffix: true })}
+                                  {todo.due_date ? formatDistanceToNow(new Date(todo.due_date), { addSuffix: true }) : 'No due date'}
                                 </span>
                               </div>
                             </div>

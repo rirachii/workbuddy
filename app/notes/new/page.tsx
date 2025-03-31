@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, Suspense } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -8,8 +8,8 @@ import { ArrowLeft, Save, Loader2, Play, Pause } from "lucide-react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { toast } from "sonner"
-import { supabase } from "@/lib/supabase"
-import { useAuth } from "@/lib/context/AuthContext"
+import { useAuth } from "@/components/providers/supabase-auth-provider"
+import { getSupabaseClient } from "@/lib/supabase/client"
 import { formatTimeWithHours } from "@/lib/utils"
 import { useConversations } from '@/lib/hooks/useConversations'
 import { ConversationResponse } from '@/lib/types/conversation'
@@ -22,19 +22,41 @@ enum ProcessingStage {
   ERROR = "error"
 }
 
-interface Memo {
-  id: string
-  user_id: string
-  title: string
-  audio_url: string
-  transcription?: string
-  summary?: string
+// Types
+interface Task {
+  id: string;
+  text: string;
+  deadline: string;
+  subtasks: string[];
+  isPriority: boolean;
 }
 
-export default function NewNotePage() {
+interface ProcessedData {
+  id: string;
+  timestamp: string;
+  summary: string;
+  transcription: string;
+  tasks: Task[];
+  priority_focus?: string;
+  rawResponse: string;
+}
+
+interface Memo {
+  id: string;
+  user_id: string;
+  title: string;
+  storage_path: string | null;
+  transcription: string | null;
+  summary: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  content: string | null;
+}
+
+function NewNotePageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { session } = useAuth()
+  const { user, isLoading: authLoading } = useAuth()
   const { addConversation } = useConversations()
   const processingStarted = useRef(false)
   
@@ -46,7 +68,7 @@ export default function NewNotePage() {
   const [memo, setMemo] = useState<Memo | null>(null)
   const [title, setTitle] = useState("")
   const [summary, setSummary] = useState<string>("")
-  const [tasks, setTasks] = useState<{id: string, text: string, deadline: string}[]>([])
+  const [tasks, setTasks] = useState<Task[]>([])
   
   // Audio playback state
   const [isPlaying, setIsPlaying] = useState(false)
@@ -56,14 +78,17 @@ export default function NewNotePage() {
   // Load memo when component mounts
   useEffect(() => {
     const memoId = searchParams.get('id')
-    if (!memoId || !session) {
-      toast.error("Invalid memo ID or not signed in")
-      router.push('/notes')
+    if (!memoId || !user) {
+      if (!authLoading) {
+        toast.error("Invalid memo ID or not signed in")
+        router.push('/notes')
+      }
       return
     }
 
     const loadMemo = async () => {
       try {
+        const supabase = getSupabaseClient()
         const { data: memo, error: memoError } = await supabase
           .from("memos")
           .select()
@@ -74,7 +99,7 @@ export default function NewNotePage() {
         if (!memo) throw new Error("Memo not found")
         
         // Check if memo belongs to current user
-        if (memo.user_id !== session.user.id) {
+        if (memo.user_id !== user.id) {
           throw new Error("Unauthorized")
         }
 
@@ -119,205 +144,143 @@ export default function NewNotePage() {
     }
 
     loadMemo()
-  }, [searchParams, session, router])
+  }, [searchParams, user, authLoading, router])
 
-  const processAudio = async (memo: any) => {
-    // Prevent multiple processing attempts
+  const processAudio = async (memo: Memo) => {
     if (processingStage === ProcessingStage.PROCESSING) {
-      return;
+      return
     }
 
     try {
-      console.log("Starting audio processing for memo:", memo.id);
-      setProcessingStage(ProcessingStage.PROCESSING);
+      console.log("Starting audio processing for memo:", memo.id)
+      setProcessingStage(ProcessingStage.PROCESSING)
       
-      // Ensure we have a valid session
-      if (!session) {
-        throw new Error('Please sign in to process audio');
+      if (!user) {
+        throw new Error('Please sign in to process audio')
       }
 
       const response = await fetch('/api/process', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`
         },
         credentials: 'include',
         body: JSON.stringify({
           filePath: memo.storage_path,
           previousConversations: []
         })
-      });
+      })
 
-      console.log("API response status:", response.status);
-
-      // Get the error response first if not ok
       if (!response.ok) {
-        const errorData = await response.json().catch(e => ({ error: 'Failed to parse error response' }));
-        console.error("API error response:", errorData);
-        
-        // If unauthorized, try to refresh the session once
-        if (response.status === 401) {
-          console.log("Attempting session refresh...");
-          const { data: { session: newSession }, error: refreshError } = await supabase.auth.refreshSession();
-          if (refreshError || !newSession) {
-            throw new Error('Session expired - Please sign in again');
-          }
-          
-          // Retry the request once with the new session
-          console.log("Retrying request with new session...");
-          const retryResponse = await fetch('/api/process', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${newSession.access_token}`
-            },
-            credentials: 'include',
-            body: JSON.stringify({
-              filePath: memo.storage_path,
-              previousConversations: []
-            })
-          });
-
-          if (!retryResponse.ok) {
-            const retryErrorData = await retryResponse.json().catch(e => ({ error: 'Failed to parse retry error response' }));
-            console.error("Retry API error response:", retryErrorData);
-            throw new Error(retryErrorData.error || `Failed to process audio after session refresh: ${retryResponse.status}`);
-          }
-
-          const data = await retryResponse.json();
-          console.log("Retry API response data:", data);
-          return handleProcessingResults(data, memo);
-        }
-        
-        // Throw the error from the server
-        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+        const errorData = await response.json().catch(e => ({ error: 'Failed to parse error response' }))
+        throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
       }
 
-      const data = await response.json().catch(e => {
-        console.error("Failed to parse API response:", e);
-        throw new Error('Failed to parse API response');
-      });
+      const data = await response.json() as ProcessedData
       
-      console.log("API response data:", data);
-
-      // Validate the response data with specific error messages
       if (!data) {
-        throw new Error('Empty response from server');
+        throw new Error('Empty response from server')
       }
       
       if (typeof data.summary !== 'string') {
-        throw new Error('Invalid or missing summary in server response');
+        throw new Error('Invalid or missing summary in server response')
       }
       
       if (!Array.isArray(data.tasks)) {
-        throw new Error('Invalid or missing tasks array in server response');
+        throw new Error('Invalid or missing tasks array in server response')
       }
       
       if (data.tasks.length === 0) {
-        throw new Error('No tasks returned from server');
-      }
-      
-      // Validate basic task structure from Gemini
-      const invalidTask = data.tasks.find(
-        (task: any) => !task.text || typeof task.text !== 'string' || 
-        !task.deadline || typeof task.deadline !== 'string'
-      );
-      
-      if (invalidTask) {
-        console.error('Invalid task from Gemini:', invalidTask);
-        throw new Error('Invalid task structure in Gemini response');
+        throw new Error('No tasks returned from server')
       }
 
       // Transform tasks to our application format
-      const priorityFocus = data.priority_focus;
-      const transformedTasks = data.tasks.map((task: any) => ({
-        id: crypto.randomUUID(), // Add unique ID
+      const transformedTasks: Task[] = data.tasks.map((task: { text: string; deadline: string; subtasks?: string[]; id?: string }) => ({
+        id: task.id || crypto.randomUUID(),
         text: task.text,
         deadline: task.deadline,
-        subtasks: [], // Initialize empty subtasks
-        isPriority: task.text === priorityFocus // Mark as priority if matches priority_focus
-      }));
+        subtasks: task.subtasks || [],
+        isPriority: task.text === data.priority_focus
+      }))
 
-      // Update the data object with transformed tasks
-      const processedData = {
-        ...data,
+      const processedData: ProcessedData = {
+        id: data.id || `session_${Date.now()}`,
+        timestamp: data.timestamp || new Date().toISOString(),
+        summary: data.summary,
+        transcription: data.transcription || '',
         tasks: transformedTasks,
-        id: `session_${Date.now()}`,
-        timestamp: new Date().toISOString()
-      };
+        priority_focus: data.priority_focus,
+        rawResponse: JSON.stringify(data)
+      }
       
-      console.log("Transformed data:", processedData);
-      await handleProcessingResults(processedData, memo);
+      await handleProcessingResults(processedData, memo)
     } catch (error) {
-      console.error("Error processing audio:", error);
-      setProcessingStage(ProcessingStage.ERROR);
+      console.error("Error processing audio:", error)
+      setProcessingStage(ProcessingStage.ERROR)
       const errorMessage = error instanceof Error 
         ? error.message 
         : typeof error === 'string'
           ? error
-          : 'An unknown error occurred';
-      setError(errorMessage);
-      toast.error(`Error processing recording: ${errorMessage}`);
+          : 'An unknown error occurred'
+      setError(errorMessage)
+      toast.error(`Error processing recording: ${errorMessage}`)
     }
-  };
+  }
 
   // Helper function to parse relative dates into timestamps
   const parseRelativeDate = (dateStr: string): string => {
-    const now = new Date();
-    const lowercaseStr = dateStr.toLowerCase();
+    const now = new Date()
+    const lowercaseStr = dateStr.toLowerCase()
     
     // Handle common relative date formats
     if (lowercaseStr.includes('end of')) {
       if (lowercaseStr.includes('week')) {
-        const endOfWeek = new Date(now);
-        endOfWeek.setDate(now.getDate() + (7 - now.getDay()));
-        endOfWeek.setHours(23, 59, 59, 999);
-        return endOfWeek.toISOString();
+        const endOfWeek = new Date(now)
+        endOfWeek.setDate(now.getDate() + (7 - now.getDay()))
+        endOfWeek.setHours(23, 59, 59, 999)
+        return endOfWeek.toISOString()
       }
       if (lowercaseStr.includes('day')) {
-        const endOfDay = new Date(now);
-        endOfDay.setHours(23, 59, 59, 999);
-        return endOfDay.toISOString();
+        const endOfDay = new Date(now)
+        endOfDay.setHours(23, 59, 59, 999)
+        return endOfDay.toISOString()
       }
       if (lowercaseStr.includes('month')) {
-        const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-        return endOfMonth.toISOString();
+        const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999)
+        return endOfMonth.toISOString()
       }
     }
     
     if (lowercaseStr.includes('tomorrow')) {
-      const tomorrow = new Date(now);
-      tomorrow.setDate(now.getDate() + 1);
-      tomorrow.setHours(23, 59, 59, 999);
-      return tomorrow.toISOString();
+      const tomorrow = new Date(now)
+      tomorrow.setDate(now.getDate() + 1)
+      tomorrow.setHours(23, 59, 59, 999)
+      return tomorrow.toISOString()
     }
     
     if (lowercaseStr.includes('next week')) {
-      const nextWeek = new Date(now);
-      nextWeek.setDate(now.getDate() + 7);
-      nextWeek.setHours(23, 59, 59, 999);
-      return nextWeek.toISOString();
+      const nextWeek = new Date(now)
+      nextWeek.setDate(now.getDate() + 7)
+      nextWeek.setHours(23, 59, 59, 999)
+      return nextWeek.toISOString()
     }
     
     // Try to parse as a specific date
-    const specificDate = new Date(dateStr);
+    const specificDate = new Date(dateStr)
     if (!isNaN(specificDate.getTime())) {
-      return specificDate.toISOString();
+      return specificDate.toISOString()
     }
     
     // Default to end of current day if we can't parse
-    const endOfToday = new Date(now);
-    endOfToday.setHours(23, 59, 59, 999);
-    console.log(`Could not parse date "${dateStr}", defaulting to end of today:`, endOfToday.toISOString());
-    return endOfToday.toISOString();
-  };
+    const endOfToday = new Date(now)
+    endOfToday.setHours(23, 59, 59, 999)
+    console.log(`Could not parse date "${dateStr}", defaulting to end of today:`, endOfToday.toISOString())
+    return endOfToday.toISOString()
+  }
 
-  // Helper function to handle processing results
-  const handleProcessingResults = async (data: any, memo: any) => {
+  const handleProcessingResults = async (data: ProcessedData, memo: Memo) => {
     try {
-      console.log("Processing results with data:", data);
-      console.log("Memo:", memo);
+      const supabase = getSupabaseClient()
 
       // Update memo with processing results
       const { error: updateError } = await supabase
@@ -326,64 +289,61 @@ export default function NewNotePage() {
           transcription: data.transcription || '',
           summary: data.summary,
         })
-        .eq('id', memo.id);
+        .eq('id', memo.id)
 
       if (updateError) {
-        console.error("Error updating memo:", updateError);
-        throw new Error(`Failed to update memo: ${updateError.message}`);
+        throw new Error(`Failed to update memo: ${updateError.message}`)
       }
 
       // Create todos if tasks were extracted
       if (data.tasks && data.tasks.length > 0) {
-        console.log("Creating todos:", data.tasks);
-        
-        const todosToInsert = data.tasks.map((task: any) => {
-          if (!session?.user.id) {
-            throw new Error('User session not found');
+        const todosToInsert = data.tasks.map((task) => {
+          if (!user?.id) {
+            throw new Error('User not found')
           }
           
-          // Parse the deadline into a proper timestamp
-          const parsedDeadline = parseRelativeDate(task.deadline);
-          console.log(`Parsed deadline "${task.deadline}" to:`, parsedDeadline);
+          const parsedDeadline = parseRelativeDate(task.deadline)
           
           return {
-            user_id: session.user.id,
+            user_id: user.id,
             memo_id: memo.id,
             title: task.text,
             due_date: parsedDeadline,
             is_completed: false,
-          };
-        });
-
-        console.log("Inserting todos:", todosToInsert);
+          }
+        })
 
         const { error: todosError } = await supabase
           .from("todos")
-          .insert(todosToInsert);
+          .insert(todosToInsert)
 
         if (todosError) {
-          console.error("Error creating todos:", todosError);
-          throw new Error(`Failed to create todos: ${todosError.message}`);
+          throw new Error(`Failed to create todos: ${todosError.message}`)
         }
       }
 
-      setSummary(data.summary);
-      setTasks(data.tasks);
+      setSummary(data.summary)
+      setTasks(data.tasks)
       
-      // Type check the data before adding to conversations
-      if (!data.id || !data.timestamp || !Array.isArray(data.tasks)) {
-        throw new Error('Invalid conversation data structure');
+      // Cast ProcessedData to ConversationResponse
+      const conversation: ConversationResponse = {
+        id: data.id,
+        timestamp: data.timestamp,
+        summary: data.summary,
+        transcription: data.transcription || '',
+        tasks: data.tasks,
+        rawResponse: data.rawResponse
       }
       
-      addConversation(data as ConversationResponse);
+      addConversation(conversation)
       
-      setProcessingStage(ProcessingStage.COMPLETE);
-      toast.success("Processing complete!");
+      setProcessingStage(ProcessingStage.COMPLETE)
+      toast.success("Processing complete!")
     } catch (error) {
-      console.error("Error in handleProcessingResults:", error);
-      throw error instanceof Error ? error : new Error('Failed to process results');
+      console.error("Error in handleProcessingResults:", error)
+      throw error instanceof Error ? error : new Error('Failed to process results')
     }
-  };
+  }
 
   const togglePlayback = () => {
     if (!audioElement) return
@@ -401,6 +361,8 @@ export default function NewNotePage() {
     if (!memo) return
 
     try {
+      const supabase = getSupabaseClient()
+      
       // Update memo title
       const { error: updateError } = await supabase
         .from("memos")
@@ -500,5 +462,35 @@ export default function NewNotePage() {
         </CardContent>
       </Card>
     </main>
+  )
+}
+
+export default function NewNotePage() {
+  return (
+    <Suspense fallback={
+      <main className="container max-w-4xl py-4 space-y-4">
+        <div className="flex items-center justify-between">
+          <Link href="/notes" className="flex items-center gap-2">
+            <ArrowLeft size={20} />
+            Back to Notes
+          </Link>
+        </div>
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              <div className="h-10 animate-pulse bg-muted rounded" />
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              <div className="h-4 w-3/4 animate-pulse bg-muted rounded" />
+              <div className="h-4 w-1/2 animate-pulse bg-muted rounded" />
+            </div>
+          </CardContent>
+        </Card>
+      </main>
+    }>
+      <NewNotePageContent />
+    </Suspense>
   )
 }

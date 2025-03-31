@@ -1,40 +1,50 @@
-import { Dialog, DialogContent } from "@/components/ui/dialog"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { useState } from "react"
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
-import { toast } from "sonner"
+'use client'
+
+import { useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { toast } from 'sonner'
+import { getSupabaseClient } from '@/lib/supabase/client'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 
 interface AuthModalProps {
-  isOpen: boolean;
-  onOpenChange?: (open: boolean) => void;
+  isOpen: boolean
+  onOpenChange: (open: boolean) => void
 }
 
 export function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
-  const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const supabase = createClientComponentClient()
+  const router = useRouter()
+  const supabase = getSupabaseClient()
 
   const handleEmailSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
-        password
+        password,
       })
 
-      if (error) throw error
+      if (error) {
+        throw error
+      }
 
-      toast.success("Signed in successfully")
-      onOpenChange?.(false)
-    } catch (error) {
-      console.error("Error signing in:", error)
-      toast.error("Failed to sign in")
+      toast.success('Successfully signed in!')
+      onOpenChange(false)
+      router.refresh()
+    } catch (error: any) {
+      toast.error(error.message || 'Error signing in')
     } finally {
       setIsLoading(false)
     }
@@ -45,21 +55,22 @@ export function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
     setIsLoading(true)
 
     try {
-      const { error } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback`
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
         }
       })
 
-      if (error) throw error
+      if (error) {
+        throw error
+      }
 
-      toast.success("Check your email to complete sign up")
-      onOpenChange?.(false)
-    } catch (error) {
-      console.error("Error signing up:", error)
-      toast.error("Failed to sign up")
+      toast.success('Check your email to confirm your account!')
+      onOpenChange(false)
+    } catch (error: any) {
+      toast.error(error.message || 'Error signing up')
     } finally {
       setIsLoading(false)
     }
@@ -67,71 +78,43 @@ export function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
-        <Tabs defaultValue="signin" className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="signin">Sign In</TabsTrigger>
-            <TabsTrigger value="signup">Sign Up</TabsTrigger>
-          </TabsList>
-          
-          <TabsContent value="signin">
-            <form onSubmit={handleEmailSignIn} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="you@example.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                />
-              </div>
-              <Button type="submit" className="w-full" disabled={isLoading}>
-                {isLoading ? "Signing in..." : "Sign In"}
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Sign In or Create Account</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 p-4">
+          <form onSubmit={handleEmailSignIn} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                placeholder="you@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="password">Password</Label>
+              <Input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+            </div>
+            <div className="flex space-x-2">
+              <Button type="submit" disabled={isLoading}>
+                {isLoading ? 'Loading...' : 'Sign In'}
               </Button>
-            </form>
-          </TabsContent>
-
-          <TabsContent value="signup">
-            <form onSubmit={handleEmailSignUp} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="you@example.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                />
-              </div>
-              <Button type="submit" className="w-full" disabled={isLoading}>
-                {isLoading ? "Signing up..." : "Sign Up"}
+              <Button type="button" variant="outline" onClick={handleEmailSignUp} disabled={isLoading}>
+                {isLoading ? 'Loading...' : 'Sign Up'}
               </Button>
-            </form>
-          </TabsContent>
-        </Tabs>
+            </div>
+          </form>
+        </div>
       </DialogContent>
     </Dialog>
   )

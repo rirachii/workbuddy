@@ -5,26 +5,21 @@ import { Switch } from "@/components/ui/switch"
 import { ArrowLeft, Moon, Sun, Volume2, Calendar, Bell, Lock } from "lucide-react"
 import Link from "next/link"
 import { Separator } from "@/components/ui/separator"
-import { useAuth } from "@/lib/hooks/useAuth"
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
-import { toast } from "sonner"
+import { useAuth } from "@/components/providers/supabase-auth-provider"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
 import { AuthModal } from "@/components/auth-modal"
+import { toast } from "sonner"
 
 export default function SettingsPage() {
-  const { session, isLoading } = useAuth();
-  const supabase = createClientComponentClient();
+  const { user, isLoading, signOut } = useAuth();
   const router = useRouter();
   const [showAuthModal, setShowAuthModal] = useState(false);
 
   const handleSignOut = async () => {
     try {
-      const { error } = await supabase.auth.signOut();
-      if (error) throw error;
-      
+      await signOut();
       toast.success("Signed out successfully");
-      router.push("/");
     } catch (error) {
       console.error("Error signing out:", error);
       toast.error("Failed to sign out");
@@ -62,7 +57,7 @@ export default function SettingsPage() {
 
         <Separator />
 
-        {session && (
+        {user && (
           <>
             <div>
               <h2 className="text-lg font-medium mb-4">Recording</h2>
@@ -169,7 +164,7 @@ export default function SettingsPage() {
             <Button variant="outline" className="w-full" disabled>
               Loading...
             </Button>
-          ) : session ? (
+          ) : user ? (
             <Button variant="outline" className="w-full" onClick={handleSignOut}>
               Sign Out
             </Button>
@@ -183,6 +178,7 @@ export default function SettingsPage() {
 
       <AuthModal 
         isOpen={showAuthModal} 
+        onOpenChange={setShowAuthModal}
       />
     </main>
   )
