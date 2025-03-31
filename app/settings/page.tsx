@@ -10,6 +10,7 @@ import { useRouter } from "next/navigation"
 import { useState } from "react"
 import { AuthModal } from "@/components/auth-modal"
 import { toast } from "sonner"
+import { BottomNav } from "@/components/BottomNav"
 
 export default function SettingsPage() {
   const { user, isLoading, signOut } = useAuth();
@@ -34,7 +35,7 @@ export default function SettingsPage() {
             <ArrowLeft />
           </Button>
         </Link>
-        <h1 className="text-2xl font-bold">Settings</h1>
+        <h1 className="text-2xl font-bold">Ghosted AI Settings</h1>
       </div>
 
       <div className="space-y-6">
@@ -180,6 +181,7 @@ export default function SettingsPage() {
         isOpen={showAuthModal} 
         onOpenChange={setShowAuthModal}
       />
+      <BottomNav />
     </main>
   )
 }

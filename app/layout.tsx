@@ -8,8 +8,8 @@ import { AuthProvider } from "@/components/providers/supabase-auth-provider"
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "AI Voice Memo App",
-  description: "Record and process voice memos with AI",
+  title: "Ghosted AI - Job Search Companion",
+  description: "Your AI companion for navigating the tough job market - Record and process your job search journey",
 }
 
 export default function RootLayout({

@@ -15,6 +15,14 @@ import { useRecorder } from "@/hooks/useRecorder"
 import { convertToMp3, needsConversion } from "@/lib/utils/audio-converter"
 import { AuthModal } from "@/components/auth-modal"
 import { BottomNav } from "@/components/BottomNav"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog"
 
 export default function Home() {
   const router = useRouter()
@@ -36,6 +44,7 @@ export default function Home() {
   const [isSaving, setIsSaving] = useState(false)
   const [showAuthModal, setShowAuthModal] = useState(false)
   const supabase = getSupabaseClient()
+  const [showWelcomeDialog, setShowWelcomeDialog] = useState(false)
 
   useEffect(() => {
     // Show auth modal if user is not signed in and not loading
@@ -60,11 +69,48 @@ export default function Home() {
     return () => setAudioElement(null)
   }, [audioUrl])
 
+  useEffect(() => {
+    // Check if it's the first visit
+    const hasVisited = localStorage.getItem('ghosted_ai_visited')
+    if (!hasVisited) {
+      setShowWelcomeDialog(true)
+      localStorage.setItem('ghosted_ai_visited', 'true')
+    }
+  }, [])
+
+  // Recording time limits (in seconds)
+  const MIN_RECORDING_TIME = 5 * 60
+  const MAX_RECORDING_TIME = 30 * 60
+
+  // Warning for recording time limits
+  useEffect(() => {
+    if (isRecording) {
+      // Warning when approaching max time
+      if (recordingTime === MAX_RECORDING_TIME - 60) {
+        toast.warning("Recording will stop in 1 minute (30 minute limit)")
+      }
+      
+      // Auto-stop at max time
+      if (recordingTime >= MAX_RECORDING_TIME) {
+        stopRecording()
+        toast.info("Recording stopped - maximum length reached (30 minutes)")
+      }
+    }
+  }, [isRecording, recordingTime, stopRecording])
+
+  // Check minimum recording time when stopping
+  const handleStopRecording = () => {
+    if (recordingTime < MIN_RECORDING_TIME) {
+      toast.warning("Please record for at least 5 minutes to get meaningful feedback")
+    }
+    stopRecording()
+  }
+
   const toggleRecording = async () => {
     if (!isRecording) {
       await startRecording()
     } else {
-      stopRecording()
+      handleStopRecording()
     }
   }
 
@@ -167,22 +213,6 @@ export default function Home() {
     }
   }, [error])
 
-  // Maximum recording time (45 minutes in seconds)
-  const MAX_RECORDING_TIME = 45 * 60
-
-  // Warning when approaching max time
-  useEffect(() => {
-    if (isRecording && recordingTime === MAX_RECORDING_TIME - 60) {
-      toast.warning("Recording will stop in 1 minute (45 minute limit)")
-    }
-    
-    // Auto-stop at max time
-    if (isRecording && recordingTime >= MAX_RECORDING_TIME) {
-      stopRecording()
-      toast.info("Recording stopped - maximum length reached (45 minutes)")
-    }
-  }, [isRecording, recordingTime, stopRecording])
-
   if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -196,10 +226,44 @@ export default function Home() {
   return (
     <main className="flex min-h-screen flex-col items-center p-4 pb-20 bg-background">
       {showAuthModal && <AuthModal isOpen={showAuthModal} onOpenChange={setShowAuthModal} />}
+      
+      <Dialog open={showWelcomeDialog} onOpenChange={setShowWelcomeDialog}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Welcome to Ghosted AI 👋</DialogTitle>
+            <DialogDescription className="space-y-4 pt-4">
+              <p>
+                We understand job searching can be tough and sometimes frustrating. 
+                Ghosted AI is your safe space to:
+              </p>
+              <ul className="list-disc pl-4 space-y-2">
+                <li>Vent about your job search experiences (5-30 minutes)</li>
+                <li>Share your interview stories, rejections, or ghosting experiences</li>
+                <li>Talk through your career concerns and challenges</li>
+              </ul>
+              <p className="font-medium pt-2">
+                After each recording, our AI will:
+              </p>
+              <ul className="list-disc pl-4 space-y-2">
+                <li>Provide empathetic, constructive feedback</li>
+                <li>Identify patterns in your job search</li>
+                <li>Suggest specific next steps and actions</li>
+                <li>Help track your progress over time</li>
+              </ul>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button onClick={() => setShowWelcomeDialog(false)}>
+              Got it, let's start!
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <div className="w-full max-w-md flex flex-col items-center justify-between min-h-[calc(100vh-5rem)]">
         <div className="w-full pt-8">
-          <h1 className="text-2xl font-bold text-center mb-2">Voice Memo AI</h1>
-          <p className="text-muted-foreground text-center mb-8">Record, transcribe, and organize your thoughts</p>
+          <h1 className="text-2xl font-bold text-center mb-2">Ghosted AI</h1>
+          <p className="text-muted-foreground text-center mb-8">Your AI companion for navigating the tough job market</p>
         </div>
 
         <div className="flex-1 flex flex-col items-center justify-center w-full">
@@ -276,19 +340,6 @@ export default function Home() {
               </p>
             </>
           )}
-        </div>
-
-        <div className="w-full pb-8 flex justify-around">
-          <Link href="/notes">
-            <Button variant="ghost" size="icon" className="rounded-full">
-              <List />
-            </Button>
-          </Link>
-          <Link href="/settings">
-            <Button variant="ghost" size="icon" className="rounded-full">
-              <Settings />
-            </Button>
-          </Link>
         </div>
       </div>
       <BottomNav />
