@@ -305,19 +305,27 @@ export default function Home() {
                     >
                       <Trash2 size={18} />
                     </Button>
-                    <Button 
-                      variant="default" 
-                      className="rounded-full flex items-center gap-2"
-                      onClick={handleSave}
-                      disabled={isSaving}
-                    >
-                      {isSaving ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Save size={18} />
+                    <div className="flex flex-col items-center gap-2">
+                      <Button 
+                        variant="default" 
+                        className="rounded-full flex items-center gap-2"
+                        onClick={handleSave}
+                        disabled={isSaving}
+                      >
+                        Save and Process
+                      </Button>
+                      {isSaving && (
+                        <div className="flex flex-col items-center text-sm text-muted-foreground animate-pulse">
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 bg-primary rounded-full animate-bounce [animation-delay:-0.3s]" />
+                            <div className="w-2 h-2 bg-primary rounded-full animate-bounce [animation-delay:-0.15s]" />
+                            <div className="w-2 h-2 bg-primary rounded-full animate-bounce" />
+                          </div>
+                          <p className="mt-2">Converting and uploading your recording...</p>
+                          <p className="text-xs mt-1">Please don't refresh the page</p>
+                        </div>
                       )}
-                      Save and Process
-                    </Button>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
