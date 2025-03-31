@@ -160,6 +160,52 @@ function NewNotePageContent() {
         throw new Error('Please sign in to process audio')
       }
 
+      // Fetch previous memos with their summaries and todos
+      const supabase = getSupabaseClient()
+      const { data: previousMemos, error: memosError } = await supabase
+        .from('memos')
+        .select(`
+          id,
+          summary,
+          created_at,
+          todos (
+            id,
+            title,
+            due_date,
+            is_completed
+          )
+        `)
+        .eq('user_id', user.id)
+        .neq('id', memo.id) // Exclude current memo
+        .order('created_at', { ascending: false })
+        .limit(5) // Get last 5 conversations
+
+      if (memosError) {
+        console.error("Error fetching previous memos:", memosError)
+        throw new Error('Failed to fetch conversation history')
+      }
+
+      // Format previous memos into conversations
+      const previousConversations = previousMemos.map(memo => ({
+        id: memo.id,
+        timestamp: memo.created_at || new Date().toISOString(),
+        summary: memo.summary || '',
+        tasks: (memo.todos || []).map(todo => ({
+          id: todo.id,
+          text: todo.title,
+          deadline: todo.due_date || 'No deadline set',
+          isPriority: false, // We'll set the first task as priority for now
+          subtasks: []
+        }))
+      }))
+
+      // If there are tasks, set the first one as priority for each conversation
+      previousConversations.forEach(conv => {
+        if (conv.tasks.length > 0) {
+          conv.tasks[0].isPriority = true
+        }
+      })
+
       const response = await fetch('/api/process', {
         method: 'POST',
         headers: {
@@ -168,7 +214,7 @@ function NewNotePageContent() {
         credentials: 'include',
         body: JSON.stringify({
           filePath: memo.storage_path,
-          previousConversations: []
+          previousConversations
         })
       })
 
