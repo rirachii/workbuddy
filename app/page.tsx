@@ -14,6 +14,7 @@ import { Loader2 } from "lucide-react"
 import { useRecorder } from "@/hooks/useRecorder"
 import { convertToMp3, needsConversion } from "@/lib/utils/audio-converter"
 import { AuthModal } from "@/components/auth-modal"
+import { BottomNav } from "@/components/BottomNav"
 
 export default function Home() {
   const router = useRouter()
@@ -193,9 +194,9 @@ export default function Home() {
   }
 
   return (
-    <main className="flex min-h-screen flex-col items-center p-4 bg-background">
+    <main className="flex min-h-screen flex-col items-center p-4 pb-20 bg-background">
       {showAuthModal && <AuthModal isOpen={showAuthModal} onOpenChange={setShowAuthModal} />}
-      <div className="w-full max-w-md flex flex-col items-center justify-between min-h-screen">
+      <div className="w-full max-w-md flex flex-col items-center justify-between min-h-[calc(100vh-5rem)]">
         <div className="w-full pt-8">
           <h1 className="text-2xl font-bold text-center mb-2">Voice Memo AI</h1>
           <p className="text-muted-foreground text-center mb-8">Record, transcribe, and organize your thoughts</p>
@@ -290,6 +291,7 @@ export default function Home() {
           </Link>
         </div>
       </div>
+      <BottomNav />
     </main>
   )
 }

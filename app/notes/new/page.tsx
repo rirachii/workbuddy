@@ -13,6 +13,7 @@ import { getSupabaseClient } from "@/lib/supabase/client"
 import { formatTimeWithHours } from "@/lib/utils"
 import { useConversations } from '@/lib/hooks/useConversations'
 import { ConversationResponse } from '@/lib/types/conversation'
+import { BottomNav } from "@/components/BottomNav"
 
 // Enum to track the processing stages
 enum ProcessingStage {
@@ -380,7 +381,7 @@ function NewNotePageContent() {
   }
 
   return (
-    <main className="container max-w-4xl py-4 space-y-4">
+    <main className="container max-w-4xl py-4 pb-20 space-y-4">
       <div className="flex items-center justify-between">
         <Link href="/notes" className="flex items-center gap-2">
           <ArrowLeft size={20} />
@@ -461,6 +462,7 @@ function NewNotePageContent() {
           </div>
         </CardContent>
       </Card>
+      <BottomNav />
     </main>
   )
 }
@@ -468,7 +470,7 @@ function NewNotePageContent() {
 export default function NewNotePage() {
   return (
     <Suspense fallback={
-      <main className="container max-w-4xl py-4 space-y-4">
+      <main className="container max-w-4xl py-4 pb-20 space-y-4">
         <div className="flex items-center justify-between">
           <Link href="/notes" className="flex items-center gap-2">
             <ArrowLeft size={20} />
@@ -488,6 +490,7 @@ export default function NewNotePage() {
             </div>
           </CardContent>
         </Card>
+        <BottomNav />
       </main>
     }>
       <NewNotePageContent />

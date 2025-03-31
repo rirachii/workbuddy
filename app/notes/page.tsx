@@ -9,6 +9,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
 import { useAuth } from '@/components/providers/supabase-auth-provider';
 import { getSupabaseClient } from '@/lib/supabase/client';
+import { BottomNav } from "@/components/BottomNav"
 
 interface Todo {
   id: string;
@@ -128,12 +129,13 @@ export default function NotesPage() {
         <div className="flex items-center justify-center h-full">
           <p className="text-muted-foreground">Loading notes...</p>
         </div>
+        <BottomNav />
       </main>
     );
   }
 
   return (
-    <main className="flex min-h-screen flex-col p-4 bg-background">
+    <main className="flex min-h-screen flex-col p-4 pb-20 bg-background">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">My Notes</h1>
         <Link href="/">
@@ -232,6 +234,7 @@ export default function NotesPage() {
           ))
         )}
       </div>
+      <BottomNav />
     </main>
   );
 }
