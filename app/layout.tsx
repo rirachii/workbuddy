@@ -4,13 +4,12 @@ import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "@/components/ui/sonner"
 import { AuthProvider } from "@/components/providers/supabase-auth-provider"
+import { PostHogProvider } from "@/components/providers/PostHogProvider"
+import metadata from './metadata'
 
 const inter = Inter({ subsets: ["latin"] })
 
-export const metadata: Metadata = {
-  title: "Ghosted AI - Job Search Companion",
-  description: "Your AI companion for navigating the tough job market - Record and process your job search journey",
-}
+export { metadata }
 
 export default function RootLayout({
   children,
@@ -20,17 +19,19 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={inter.className}>
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="system"
-          enableSystem
-          disableTransitionOnChange
-        >
-          <AuthProvider>
-            {children}
-            <Toaster />
-          </AuthProvider>
-        </ThemeProvider>
+        <PostHogProvider>
+          <ThemeProvider
+            attribute="class"
+            defaultTheme="system"
+            enableSystem
+            disableTransitionOnChange
+          >
+            <AuthProvider>
+              {children}
+              <Toaster />
+            </AuthProvider>
+          </ThemeProvider>
+        </PostHogProvider>
       </body>
     </html>
   )
