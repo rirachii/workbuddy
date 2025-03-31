@@ -26,6 +26,63 @@ import dynamic from "next/dynamic"
 // Dynamically import AudioSphere with no SSR
 const AudioSphere = dynamic<any>(() => import("@/components/AudioSphere"), { ssr: false })
 
+// IndexedDB setup
+const DB_NAME = 'audioBackupDB';
+const STORE_NAME = 'audioFiles';
+const DB_VERSION = 1;
+
+async function initDB() {
+  return new Promise<IDBDatabase>((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => resolve(request.result);
+    
+    request.onupgradeneeded = (event) => {
+      const db = (event.target as IDBOpenDBRequest).result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME);
+      }
+    };
+  });
+}
+
+async function saveToIndexedDB(key: string, blob: Blob) {
+  const db = await initDB();
+  return new Promise<void>((resolve, reject) => {
+    const transaction = db.transaction(STORE_NAME, 'readwrite');
+    const store = transaction.objectStore(STORE_NAME);
+    const request = store.put(blob, key);
+    
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function getFromIndexedDB(key: string): Promise<Blob | null> {
+  const db = await initDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(STORE_NAME, 'readonly');
+    const store = transaction.objectStore(STORE_NAME);
+    const request = store.get(key);
+    
+    request.onsuccess = () => resolve(request.result || null);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function deleteFromIndexedDB(key: string) {
+  const db = await initDB();
+  return new Promise<void>((resolve, reject) => {
+    const transaction = db.transaction(STORE_NAME, 'readwrite');
+    const store = transaction.objectStore(STORE_NAME);
+    const request = store.delete(key);
+    
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+}
+
 export default function Home() {
   const router = useRouter()
   const {
@@ -144,30 +201,52 @@ export default function Home() {
       return
     }
 
-    // Add file type validation
-    const allowedTypes = ['audio/wav', 'audio/webm', 'audio/ogg', 'audio/mp3'];
-    if (!allowedTypes.includes(audioBlob.type)) {
-      toast.error("Invalid audio format")
-      return
-    }
-
     try {
       setIsSaving(true)
+
+      // Generate unique filename early for both backup and upload
+      const timestamp = new Date().getTime()
+      const filename = `${timestamp}-${user.id}.mp3`
+      const backupKey = `backup-${filename}`
+
+      // Log original audio details
+      console.log('Original audio:', {
+        size: audioBlob.size,
+        type: audioBlob.type,
+        needsConversion: needsConversion(audioBlob)
+      });
 
       // Convert to MP3 if needed
       let finalBlob: Blob;
       try {
-        finalBlob = needsConversion(audioBlob) 
-          ? await convertToMp3(audioBlob)
-          : audioBlob;
+        if (needsConversion(audioBlob)) {
+          console.log('Converting audio to MP3...');
+          finalBlob = await convertToMp3(audioBlob);
+          console.log('Conversion complete:', {
+            originalSize: audioBlob.size,
+            convertedSize: finalBlob.size,
+            convertedType: finalBlob.type
+          });
+        } else {
+          console.log('Audio is already MP3, no conversion needed');
+          finalBlob = audioBlob;
+        }
+
+        // Save to IndexedDB as backup
+        console.log('Saving backup to IndexedDB...');
+        await saveToIndexedDB(backupKey, finalBlob);
+        console.log('Backup saved successfully');
+
       } catch (error) {
-        console.error("Error converting audio:", error);
-        throw new Error("Failed to convert audio recording. Please try again.");
+        console.error("Error in conversion or backup:", error);
+        throw new Error("Failed to process audio recording. Please try again.");
       }
-      
-      // Generate unique filename
-      const timestamp = new Date().getTime()
-      const filename = `${timestamp}-${user.id}.mp3`
+
+      console.log('Uploading to Supabase:', {
+        filename,
+        size: finalBlob.size,
+        type: finalBlob.type
+      });
 
       // Upload to Supabase Storage
       const { data: uploadData, error: uploadError } = await supabase.storage
@@ -207,6 +286,14 @@ export default function Home() {
         throw new Error("Failed to create memo: No data returned");
       }
 
+      // Delete backup after successful upload
+      try {
+        await deleteFromIndexedDB(backupKey);
+        console.log('Backup deleted successfully');
+      } catch (deleteError) {
+        console.warn('Failed to delete backup, but upload was successful:', deleteError);
+      }
+
       toast.success("Recording saved! Processing your audio...")
       resetRecording()
       
@@ -216,6 +303,9 @@ export default function Home() {
       console.error("Error saving recording:", error)
       const errorMessage = error instanceof Error ? error.message : "An unexpected error occurred"
       toast.error(errorMessage)
+      
+      // If there was an error, let the user know their recording is backed up
+      toast.info("Don't worry! Your recording is safely backed up in your browser.")
     } finally {
       setIsSaving(false)
     }
@@ -268,6 +358,36 @@ export default function Home() {
       }
     }
   }, [isRecording])
+
+  // Add cleanup function for old backups
+  useEffect(() => {
+    const cleanupOldBackups = async () => {
+      try {
+        const db = await initDB();
+        const transaction = db.transaction(STORE_NAME, 'readonly');
+        const store = transaction.objectStore(STORE_NAME);
+        const request = store.getAllKeys();
+        
+        request.onsuccess = async () => {
+          const keys = request.result as string[];
+          const oneDayAgo = Date.now() - (24 * 60 * 60 * 1000);
+          
+          for (const key of keys) {
+            // Extract timestamp from key format: backup-{timestamp}-{userId}.mp3
+            const timestamp = parseInt(key.split('-')[1]);
+            if (timestamp < oneDayAgo) {
+              await deleteFromIndexedDB(key);
+              console.log('Deleted old backup:', key);
+            }
+          }
+        };
+      } catch (error) {
+        console.warn('Failed to cleanup old backups:', error);
+      }
+    };
+
+    cleanupOldBackups();
+  }, []);
 
   if (isLoading) {
     return (

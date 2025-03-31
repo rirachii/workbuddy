@@ -7,33 +7,12 @@ import * as os from 'os';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from '@google/generative-ai';
 import { getAuthenticatedUser, supabaseAdmin } from '@/lib/supabase/server';
 import crypto from 'crypto';
+import { convertToMp3, getAudioMimeType, needsConversion } from '@/lib/utils/audio-converter';
 
 // Specify that this is a Node.js API route
 export const runtime = 'nodejs';
 
 const execAsync = promisify(exec);
-
-async function convertWebmToMp3(webmBuffer: Buffer): Promise<Buffer> {
-  // Create temporary files
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'audio-'));
-  const inputPath = path.join(tempDir, 'input.webm');
-  const outputPath = path.join(tempDir, 'output.mp3');
-
-  try {
-    // Write input file
-    await fs.writeFile(inputPath, webmBuffer);
-
-    // Convert using ffmpeg
-    await execAsync(`ffmpeg -i "${inputPath}" -c:a libmp3lame -q:a 2 "${outputPath}"`);
-
-    // Read output file
-    const mp3Buffer = await fs.readFile(outputPath);
-    return mp3Buffer;
-  } finally {
-    // Clean up temporary files
-    await fs.rm(tempDir, { recursive: true, force: true });
-  }
-}
 
 async function fetchAudioFromSupabase(filePath: string, userId: string): Promise<Buffer> {
   const bucketName = 'voice-memos';
@@ -59,16 +38,15 @@ async function fetchAudioFromSupabase(filePath: string, userId: string): Promise
 }
 
 async function processAudioFile(audioBuffer: Buffer, filePath: string): Promise<Buffer> {
-  // Check if the file is already an MP3
-  const isMP3 = filePath.toLowerCase().endsWith('.mp3');
+  // Log the file details for debugging
+  console.log('Processing audio file:', {
+    size: audioBuffer.length,
+    filePath,
+    mimeType: 'audio/mp3' // We know it's MP3 from Supabase
+  });
   
-  if (isMP3) {
-    console.log('File is already MP3, skipping conversion');
-    return audioBuffer;
-  }
-
-  console.log('Converting audio to MP3...');
-  return await convertWebmToMp3(audioBuffer);
+  // Since the file is already MP3, just return it
+  return audioBuffer;
 }
 
 // Helper function to flatten structured summary into a single string
@@ -109,11 +87,20 @@ function flattenSummary(structuredSummary: any): string {
 
 export async function POST(request: NextRequest) {
   try {
-    // Get Gemini API key from environment variables
+    // Get API keys from environment variables
     const apiKey = process.env.GEMINI_API_KEY;
+    const heliconeKey = process.env.HELICONE_API_KEY;
+    
     if (!apiKey) {
       return NextResponse.json(
         { error: 'Gemini API key not configured' },
+        { status: 500 }
+      );
+    }
+
+    if (!heliconeKey) {
+      return NextResponse.json(
+        { error: 'Helicone API key not configured' },
         { status: 500 }
       );
     }
@@ -163,11 +150,18 @@ export async function POST(request: NextRequest) {
       const processedBuffer = await processAudioFile(audioBuffer, filePath);
       const base64Audio = processedBuffer.toString('base64');
       console.log('Audio file processed and converted to base64');
+      console.log('Audio file details:', {
+        originalSize: audioBuffer.length,
+        processedSize: processedBuffer.length,
+        filePath,
+        isMP3: filePath.toLowerCase().endsWith('.mp3'),
+        mimeType: filePath.toLowerCase().endsWith('.mp3') ? 'audio/mp3' : 'audio/webm'
+      });
       
       // Initialize the Google GenAI client
       const genAI = new GoogleGenerativeAI(apiKey);
       
-      // Get the Gemini Pro Vision model
+      // Get the Gemini model with Helicone configuration
       const model = genAI.getGenerativeModel({ 
         model: "gemini-2.0-flash",
         generationConfig: {
@@ -194,6 +188,12 @@ export async function POST(request: NextRequest) {
             threshold: HarmBlockThreshold.BLOCK_NONE,
           },
         ],
+      }, {
+        baseUrl: "https://gateway.helicone.ai",
+        customHeaders: {
+          'Helicone-Auth': `Bearer ${heliconeKey}`,
+          'Helicone-Target-URL': 'https://generativelanguage.googleapis.com'
+        }
       });
       
       // Create a prompt for the model
@@ -250,11 +250,18 @@ export async function POST(request: NextRequest) {
         { text: basePrompt },
         {
           inlineData: {
-            mimeType: "audio/mp3",
+            mimeType: "audio/mp3", // Always use MP3 since we convert everything to MP3
             data: base64Audio
           }
         }
       ];
+      
+      console.log('Sending request to Gemini with parts:', {
+        modelName: "gemini-2.0-flash",
+        partsLength: parts.length,
+        audioMimeType: parts[1]?.inlineData?.mimeType ?? 'unknown',
+        audioDataLength: parts[1]?.inlineData?.data?.length ?? 0
+      });
       
       // Generate content from the model
       console.log('Calling Gemini API with GoogleGenAI SDK...');

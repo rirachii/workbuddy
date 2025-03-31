@@ -3,11 +3,20 @@ import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from '@google/ge
 
 export async function POST(request: NextRequest) {
   try {
-    // Get Gemini API key from environment variables
+    // Get API keys from environment variables
     const apiKey = process.env.GEMINI_API_KEY;
+    const heliconeKey = process.env.HELICONE_API_KEY;
+    
     if (!apiKey) {
       return NextResponse.json(
         { error: 'Gemini API key not configured' },
+        { status: 500 }
+      );
+    }
+
+    if (!heliconeKey) {
+      return NextResponse.json(
+        { error: 'Helicone API key not configured' },
         { status: 500 }
       );
     }
@@ -29,7 +38,7 @@ export async function POST(request: NextRequest) {
       // Initialize the Google GenAI client
       const genAI = new GoogleGenerativeAI(apiKey);
       
-      // Get the Gemini Pro model
+      // Get the Gemini Pro model with Helicone configuration
       const model = genAI.getGenerativeModel({ 
         model: "gemini-pro",
         generationConfig: {
@@ -56,6 +65,12 @@ export async function POST(request: NextRequest) {
             threshold: HarmBlockThreshold.BLOCK_NONE,
           },
         ],
+      }, {
+        baseUrl: "https://gateway.helicone.ai",
+        customHeaders: {
+          'Helicone-Auth': `Bearer ${heliconeKey}`,
+          'Helicone-Target-URL': 'https://generativelanguage.googleapis.com'
+        }
       });
       
       // Create a prompt for the model
