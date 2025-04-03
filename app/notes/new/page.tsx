@@ -212,6 +212,7 @@ function NewNotePageContent() {
         throw new Error('No active session - please sign in again')
       }
 
+      console.log('Starting request to edge function...');
       const response = await fetch('https://ragulxwhrwzzeifoqilx.supabase.co/functions/v1/process', {
         method: 'POST',
         headers: {
@@ -222,11 +223,16 @@ function NewNotePageContent() {
           filePath: memo.storage_path,
           previousConversations
         })
-      })
+      });
 
+      console.log('Edge function response status:', response.status);
+      
       if (!response.ok) {
-        const errorData = await response.json().catch(e => ({ error: 'Failed to parse error response' }))
-        throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
+        const errorData = await response.json().catch(e => ({ 
+          error: `Failed to parse error response: ${e.message}` 
+        }));
+        console.error('Edge function error:', errorData);
+        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
       }
 
       const data = await response.json() as ProcessedData
