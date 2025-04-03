@@ -207,11 +207,16 @@ function NewNotePageContent() {
       })
 
       const { data: { session } } = await supabase.auth.getSession()
+      
+      if (!session?.access_token) {
+        throw new Error('No active session - please sign in again')
+      }
+
       const response = await fetch('https://ragulxwhrwzzeifoqilx.supabase.co/functions/v1/process', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session?.access_token}`,
+          'Authorization': `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({
           filePath: memo.storage_path,
