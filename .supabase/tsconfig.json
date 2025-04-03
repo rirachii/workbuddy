@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "noImplicitAny": false,
+    "allowJs": true,
+    "checkJs": false,
+    "esModuleInterop": true,
+    "lib": ["esnext"],
+    "module": "esnext",
+    "moduleResolution": "node",
+    "noEmit": true,
+    "strict": false,
+    "target": "esnext",
+    "useUnknownInCatchVariables": false
+  },
+  "include": ["../supabase/**/*"],
+  "exclude": []
+} 
