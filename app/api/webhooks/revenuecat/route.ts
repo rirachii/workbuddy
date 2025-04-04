@@ -1,109 +1,93 @@
-import { createClient } from '@supabase/supabase-js';
-import { NextResponse } from 'next/server';
-import { headers } from 'next/headers';
-import crypto from 'crypto';
+import { createServerClient } from '@supabase/ssr'
+import { cookies } from 'next/headers'
+import { NextResponse } from 'next/server'
 
-// Initialize Supabase client with service role key for admin access
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
-// RevenueCat webhook types
-type RevenueCatEvent = {
-  event: {
-    type: string;
-    subscriber: {
-      original_app_user_id: string;
-      subscriptions: {
-        [key: string]: {
-          period_type: string;
-          purchased_at: string;
-          expires_at: string;
-          store: string;
-          is_sandbox: boolean;
-        }
-      };
-      entitlements: {
-        [key: string]: {
-          expires_date: string | null;
-          product_identifier: string;
-        }
-      };
-    };
-  };
-};
-
-// Verify RevenueCat webhook signature
-function verifyRevenueCatSignature(
-  payload: string,
-  signature: string,
-  secret: string
-): boolean {
-  const hmac = crypto.createHmac('sha256', secret);
-  const digest = hmac.update(payload).digest('hex');
-  return crypto.timingSafeEqual(
-    Buffer.from(signature),
-    Buffer.from(digest)
-  );
-}
+const REVENUECAT_WEBHOOK_AUTH_KEY = process.env.REVENUECAT_WEBHOOK_AUTH_KEY!
 
 export async function POST(req: Request) {
   try {
-    const headersList = headers();
-    const signature = headersList.get('x-revenuecat-signature');
-
-    // Verify webhook signature
-    if (!signature || !process.env.REVENUECAT_WEBHOOK_SECRET) {
-      return new NextResponse('Unauthorized', { status: 401 });
+    // Verify RevenueCat webhook authentication
+    const authHeader = req.headers.get('Authorization')
+    if (authHeader !== `Bearer ${REVENUECAT_WEBHOOK_AUTH_KEY}`) {
+      return new NextResponse('Unauthorized', { status: 401 })
     }
 
-    const body = await req.text();
-    const isValid = verifyRevenueCatSignature(
-      body,
-      signature,
-      process.env.REVENUECAT_WEBHOOK_SECRET
-    );
-
-    if (!isValid) {
-      return new NextResponse('Invalid signature', { status: 401 });
-    }
-
-    const event = JSON.parse(body) as RevenueCatEvent;
-    const userId = event.event.subscriber.original_app_user_id;
+    const payload = await req.json()
+    const event = payload.event
+    const userId = payload.app_user_id
     
-    // Get the first subscription (usually there's only one)
-    const subscription = Object.values(event.event.subscriber.subscriptions)[0];
-    const entitlement = Object.values(event.event.subscriber.entitlements)[0];
+    // Skip if no user ID
+    if (!userId) {
+      console.error('No user ID in webhook payload:', payload)
+      return new NextResponse('No user ID provided', { status: 400 })
+    }
 
-    // Determine subscription status
-    const now = new Date();
-    const expiresAt = new Date(subscription.expires_at);
-    const isActive = expiresAt > now;
-
-    // Get current subscription to check trial status
-    const { data: currentSub } = await supabase
-      .from('private.user_subscriptions')
-      .select('subscription_status')
-      .eq('id', userId)
-      .single();
-
-    // Update subscription status
-    await supabase.rpc('update_subscription_status', {
-      user_id: userId,
-      new_status: {
-        plan: entitlement?.product_identifier || 'free',
-        active: isActive,
-        trial_used: currentSub?.subscription_status?.trial_used || subscription.period_type === 'TRIAL',
-        expires_at: subscription.expires_at,
-        updated_at: new Date().toISOString()
+    const cookieStore = cookies()
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!, // Use service role key for private schema access
+      {
+        cookies: {
+          get(name: string) {
+            return cookieStore.get(name)?.value
+          },
+          set(name: string, value: string, options: any) {
+            cookieStore.set({ name, value, ...options })
+          },
+          remove(name: string, options: any) {
+            cookieStore.set({ name, value: '', ...options })
+          },
+        },
       }
-    });
+    )
 
-    return new NextResponse('OK', { status: 200 });
+    // Handle different event types
+    switch (event.type) {
+      case 'INITIAL_PURCHASE':
+      case 'RENEWAL':
+      case 'TRANSFER':
+        // Active subscription
+        const expirationDate = new Date(event.expires_at || Date.now() + (
+          event.period_type === 'ANNUAL' 
+            ? 365 * 24 * 60 * 60 * 1000  // 1 year
+            : 30 * 24 * 60 * 60 * 1000   // 30 days
+        ))
+
+        await supabase.rpc('update_subscription_status', {
+          user_id: userId,
+          new_status: {
+            plan: event.period_type === 'ANNUAL' ? 'yearly' : 'monthly',
+            active: true,
+            trial_used: event.is_trial_conversion || false,
+            expires_at: expirationDate.toISOString(),
+            updated_at: new Date().toISOString()
+          }
+        })
+        break
+
+      case 'CANCELLATION':
+      case 'EXPIRATION':
+      case 'BILLING_ISSUE':
+        // Subscription ended or failed
+        await supabase.rpc('update_subscription_status', {
+          user_id: userId,
+          new_status: {
+            plan: 'free',
+            active: false,
+            trial_used: true, // Keep trial used status
+            updated_at: new Date().toISOString()
+          }
+        })
+        break
+
+      default:
+        console.log('Unhandled event type:', event.type)
+    }
+
+    return new NextResponse('Webhook processed', { status: 200 })
   } catch (error) {
-    console.error('RevenueCat webhook error:', error);
-    return new NextResponse('Internal Server Error', { status: 500 });
+    console.error('Error processing RevenueCat webhook:', error)
+    return new NextResponse('Internal Server Error', { status: 500 })
   }
 }
 

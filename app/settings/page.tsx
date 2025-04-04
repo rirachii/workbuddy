@@ -6,7 +6,7 @@ import { ArrowLeft, Moon, Sun, Volume2, Calendar, Bell, Lock, Sparkles } from "l
 import Link from "next/link"
 import { Separator } from "@/components/ui/separator"
 import { useAuth } from "@/components/providers/supabase-auth-provider"
-import { useRouter } from "next/navigation"
+import { SubscriptionManager } from '@/components/subscription/SubscriptionManager'
 import { useState } from "react"
 import { AuthModal } from "@/components/auth-modal"
 import { toast } from "sonner"
@@ -46,6 +46,11 @@ export default function SettingsPage() {
             <div>
               <h2 className="text-lg font-medium mb-4">Subscription</h2>
               <SubscriptionPlans />
+            </div>
+
+            <div className="container py-8">
+              <h1>Account Settings</h1>
+              <SubscriptionManager />
             </div>
 
             <Separator />
