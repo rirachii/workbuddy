@@ -9,19 +9,22 @@ import metadata from './metadata'
 import { SupabaseProvider } from '@/components/providers/supabase-provider'
 import { SubscriptionProvider } from '@/components/providers/subscription-provider'
 
-const inter = Inter({ subsets: ["latin"] })
+const inter = Inter({ subsets: ['latin'] });
 
-export { metadata }
+export const metadata: Metadata = {
+  title: 'AI Voice Memo App',
+  description: 'Record and transcribe voice memos with AI',
+};
 
 export default function RootLayout({
   children,
 }: {
-  children: React.ReactNode
+  children: React.ReactNode;
 }) {
   return (
     <html lang="en">
       <body className={inter.className}>
-        <PostHogProvider>
+        <SupabaseProvider>
           <ThemeProvider
             attribute="class"
             defaultTheme="system"
@@ -37,8 +40,8 @@ export default function RootLayout({
               </AuthProvider>
             </SupabaseProvider>
           </ThemeProvider>
-        </PostHogProvider>
+        </SupabaseProvider>
       </body>
     </html>
-  )
+  );
 }

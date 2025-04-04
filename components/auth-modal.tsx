@@ -1,8 +1,11 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { createClient } from '@/lib/supabase'
 import { toast } from 'sonner'
 import { getSupabaseClient } from '@/lib/supabase/client'
 import {
@@ -15,12 +18,13 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
+
 interface AuthModalProps {
   isOpen: boolean
-  onOpenChange: (open: boolean) => void
+  onClose: () => void
 }
 
-export function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
+export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -84,19 +88,23 @@ export function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
     }
   }
 
-  const handleAppleSignIn = async () => {
     try {
-      setIsLoading(true)
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'apple',
+      const { error } = await supabase.auth.signInWithOtp({
+        email,
         options: {
-          redirectTo: `${window.location.origin}/auth/callback`
-        }
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
+        },
       })
 
-      if (error) throw error
-    } catch (error: any) {
-      toast.error(error.message || 'Error signing in with Apple')
+      if (error) {
+        throw error
+      }
+
+      toast.success('Check your email for the magic link!')
+      onClose()
+    } catch (error) {
+      console.error('Error:', error)
+      toast.error('Failed to send magic link. Please try again.')
     } finally {
       setIsLoading(false)
     }
@@ -200,8 +208,9 @@ export function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
             variant="outline"
           >
             {isLoading ? 'Loading...' : 'Continue with Apple'}
+
           </Button>
-        </div>
+        </form>
       </DialogContent>
     </Dialog>
   )
