@@ -27,15 +27,24 @@ export const PLAN_FEATURES = {
   ],
 };
 
+let isInitialized = false;
+
 // Initialize RevenueCat
-export const initializeRevenueCat = () => {
+export const initializeRevenueCat = (userId?: string) => {
   if (!REVENUECAT_PUBLIC_SDK_KEY) {
     throw new Error('RevenueCat public key is not configured');
   }
   
-  // Initialize with a random UUID as anonymous ID
-  const anonymousId = crypto.randomUUID();
-  Purchases.configure(REVENUECAT_PUBLIC_SDK_KEY, anonymousId);
+  console.log('Initializing RevenueCat with key:', REVENUECAT_PUBLIC_SDK_KEY.substring(0, 5) + '...');
+  console.log('User ID:', userId || 'anonymous');
+  
+  // Only initialize once
+  if (!isInitialized) {
+    const anonymousId = userId || Purchases.generateRevenueCatAnonymousAppUserId();
+    console.log('Using user ID for RevenueCat:', anonymousId);
+    Purchases.configure(REVENUECAT_PUBLIC_SDK_KEY, anonymousId);
+    isInitialized = true;
+  }
 };
 
 // Types

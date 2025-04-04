@@ -1,16 +1,16 @@
 'use client'
 
 import { createContext, useContext, useState } from 'react'
-import { createClient } from '@supabase/supabase-js'
+import { createBrowserClient } from '@supabase/ssr'
 import { Database } from '@/lib/supabase/types'
 
-const supabase = createClient<Database>(
+const supabase = createBrowserClient<Database>(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
 interface SupabaseContextType {
-  supabase: ReturnType<typeof createClient<Database>>
+  supabase: ReturnType<typeof createBrowserClient<Database>>
 }
 
 const SupabaseContext = createContext<SupabaseContextType | undefined>(undefined)

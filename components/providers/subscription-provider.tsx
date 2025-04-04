@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { useAuth } from '@/components/providers/supabase-auth-provider';
 import { Purchases, Package, CustomerInfo, PurchasesError, ErrorCode } from '@revenuecat/purchases-js';
-import { initializeRevenueCat, UserSubscriptionStatus, SubscriptionPlan } from '@/lib/revenuecat';
+import { initializeRevenueCat, UserSubscriptionStatus, SubscriptionPlan, SUBSCRIPTION_PLANS } from '@/lib/revenuecat';
 import { toast } from 'sonner';
 
 type SubscriptionContextType = {
@@ -19,37 +19,32 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
   const [isLoading, setIsLoading] = useState(true);
   const [subscriptionStatus, setSubscriptionStatus] = useState<UserSubscriptionStatus | null>(null);
 
-  // Initialize RevenueCat once when the provider mounts
+  // Initialize RevenueCat and handle user identification
   useEffect(() => {
-    try {
-      initializeRevenueCat();
-    } catch (error) {
-      console.error('Failed to initialize RevenueCat:', error);
-      toast.error('Failed to initialize subscription service');
-    }
-  }, []);
-
-  // Identify user when they log in
-  useEffect(() => {
-    const identifyUser = async () => {
-      if (!user?.id) return;
-
+    const setupRevenueCat = async () => {
       try {
-        // Configure with user ID
-        Purchases.configure(process.env.NEXT_PUBLIC_REVENUECAT_KEY!, user.id);
-        await checkSubscriptionStatus();
+        console.log('Setting up RevenueCat with user:', user?.id);
+        // Initialize with user ID if available
+        initializeRevenueCat(user?.id);
+        
+        if (user?.id) {
+          await checkSubscriptionStatus();
+        }
       } catch (error) {
-        console.error('Failed to identify user:', error);
-        toast.error('Failed to load subscription status');
+        console.error('Failed to setup RevenueCat:', error);
+        toast.error('Failed to initialize subscription service');
+      } finally {
+        setIsLoading(false);
       }
     };
 
-    identifyUser();
+    setupRevenueCat();
   }, [user?.id]);
 
   const checkSubscriptionStatus = async () => {
     try {
       const customerInfo = await Purchases.getSharedInstance().getCustomerInfo();
+      console.log('Customer info:', customerInfo);
       
       // Check if user has active subscription
       const hasActiveSubscription = Object.keys(customerInfo.entitlements.active).length > 0;
@@ -79,31 +74,49 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
     } catch (error) {
       console.error('Failed to check subscription status:', error);
       toast.error('Failed to check subscription status');
-    } finally {
-      setIsLoading(false);
     }
   };
 
   const purchaseSubscription = async (productId: string) => {
+    if (!user) {
+      toast.error('Please sign in to purchase a subscription');
+      return;
+    }
+
     try {
       setIsLoading(true);
       
+      console.log('Attempting to purchase product:', productId);
+      console.log('Expected product IDs:', SUBSCRIPTION_PLANS);
+      
       // Get available offerings
       const offerings = await Purchases.getSharedInstance().getOfferings();
+      console.log('Available offerings:', offerings);
+      
       if (!offerings.current) {
-        throw new Error('No offerings available');
+        console.error('No offerings found. Full offerings object:', offerings);
+        throw new Error('No subscription plans are currently available. Please try again later.');
       }
+
+      console.log('Current offering packages:', offerings.current.availablePackages);
 
       // Find the package with matching product ID
       const targetPackage = offerings.current.availablePackages.find(
-        (pkg: Package) => pkg.webBillingProduct.identifier === productId
+        (pkg: Package) => {
+          console.log('Checking package:', pkg.webBillingProduct.identifier);
+          return pkg.webBillingProduct.identifier === productId;
+        }
       );
 
       if (!targetPackage) {
-        throw new Error('Selected subscription package not found');
+        console.error('Product ID not found in packages. Available packages:', 
+          offerings.current.availablePackages.map(pkg => pkg.webBillingProduct.identifier)
+        );
+        throw new Error(`Subscription plan "${productId}" not found. Please try another plan.`);
       }
 
       // Purchase the package
+      console.log('Purchasing package:', targetPackage);
       await Purchases.getSharedInstance().purchase({
         rcPackage: targetPackage,
       });
