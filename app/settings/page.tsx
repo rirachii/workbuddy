@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
-import { ArrowLeft, Moon, Sun, Volume2, Calendar, Bell, Lock } from "lucide-react"
+import { ArrowLeft, Moon, Sun, Volume2, Calendar, Bell, Lock, Sparkles } from "lucide-react"
 import Link from "next/link"
 import { Separator } from "@/components/ui/separator"
 import { useAuth } from "@/components/providers/supabase-auth-provider"
@@ -11,9 +11,12 @@ import { useState } from "react"
 import { AuthModal } from "@/components/auth-modal"
 import { toast } from "sonner"
 import { BottomNav } from "@/components/BottomNav"
+import { SubscriptionPlans } from "@/components/subscription/SubscriptionPlans"
+import { useSubscription } from "@/components/providers/subscription-provider"
 
 export default function SettingsPage() {
   const { user, isLoading, signOut } = useAuth();
+  const { subscriptionStatus } = useSubscription();
   const [showAuthModal, setShowAuthModal] = useState(false);
 
   const handleSignOut = async () => {
@@ -38,6 +41,17 @@ export default function SettingsPage() {
       </div>
 
       <div className="space-y-6">
+        {user && (
+          <>
+            <div>
+              <h2 className="text-lg font-medium mb-4">Subscription</h2>
+              <SubscriptionPlans />
+            </div>
+
+            <Separator />
+          </>
+        )}
+
         <div>
           <h2 className="text-lg font-medium mb-4">Appearance</h2>
           <div className="space-y-4">
@@ -89,8 +103,14 @@ export default function SettingsPage() {
                   <div className="flex items-center gap-2">
                     <Calendar size={18} />
                     <span>Calendar sync</span>
+                    {!subscriptionStatus?.isProMember && (
+                      <Sparkles className="h-4 w-4 text-yellow-500" />
+                    )}
                   </div>
-                  <Switch id="calendar-sync" />
+                  <Switch 
+                    id="calendar-sync" 
+                    disabled={!subscriptionStatus?.isProMember}
+                  />
                 </div>
               </div>
             </div>
@@ -125,34 +145,70 @@ export default function SettingsPage() {
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <span className="flex items-center gap-2">Automatic transcription</span>
+                    <span className="flex items-center gap-2">
+                      Automatic transcription
+                      {!subscriptionStatus?.isProMember && (
+                        <Sparkles className="h-4 w-4 text-yellow-500" />
+                      )}
+                    </span>
                     <p className="text-sm text-muted-foreground">Convert speech to text as you record</p>
                   </div>
-                  <Switch id="auto-transcription" defaultChecked />
+                  <Switch 
+                    id="auto-transcription" 
+                    defaultChecked={subscriptionStatus?.isProMember}
+                    disabled={!subscriptionStatus?.isProMember}
+                  />
                 </div>
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <span className="flex items-center gap-2">AI summarization</span>
+                    <span className="flex items-center gap-2">
+                      AI summarization
+                      {!subscriptionStatus?.isProMember && (
+                        <Sparkles className="h-4 w-4 text-yellow-500" />
+                      )}
+                    </span>
                     <p className="text-sm text-muted-foreground">Generate concise summaries of your notes</p>
                   </div>
-                  <Switch id="ai-summarization" defaultChecked />
+                  <Switch 
+                    id="ai-summarization" 
+                    defaultChecked={subscriptionStatus?.isProMember}
+                    disabled={!subscriptionStatus?.isProMember}
+                  />
                 </div>
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <span className="flex items-center gap-2">Task extraction</span>
+                    <span className="flex items-center gap-2">
+                      Task extraction
+                      {!subscriptionStatus?.isProMember && (
+                        <Sparkles className="h-4 w-4 text-yellow-500" />
+                      )}
+                    </span>
                     <p className="text-sm text-muted-foreground">Automatically identify tasks from your notes</p>
                   </div>
-                  <Switch id="task-extraction" defaultChecked />
+                  <Switch 
+                    id="task-extraction" 
+                    defaultChecked={subscriptionStatus?.isProMember}
+                    disabled={!subscriptionStatus?.isProMember}
+                  />
                 </div>
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <span className="flex items-center gap-2">Personalized insights</span>
+                    <span className="flex items-center gap-2">
+                      Personalized insights
+                      {!subscriptionStatus?.isProMember && (
+                        <Sparkles className="h-4 w-4 text-yellow-500" />
+                      )}
+                    </span>
                     <p className="text-sm text-muted-foreground">Get AI-powered suggestions based on your notes</p>
                   </div>
-                  <Switch id="personalized-insights" defaultChecked />
+                  <Switch 
+                    id="personalized-insights" 
+                    defaultChecked={subscriptionStatus?.isProMember}
+                    disabled={!subscriptionStatus?.isProMember}
+                  />
                 </div>
               </div>
             </div>
@@ -182,6 +238,6 @@ export default function SettingsPage() {
       />
       <BottomNav />
     </main>
-  )
+  );
 }
 

@@ -2,8 +2,8 @@
 
 import { createContext, useContext, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { getSupabaseClient } from '@/lib/supabase/client'
 import { User } from '@supabase/supabase-js'
+import { useSupabase } from './supabase-provider'
 
 interface AuthContextType {
   user: User | null
@@ -21,7 +21,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const router = useRouter()
-  const supabase = getSupabaseClient()
+  const { supabase } = useSupabase()
 
   useEffect(() => {
     // Check current session

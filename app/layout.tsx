@@ -6,6 +6,8 @@ import { Toaster } from "@/components/ui/sonner"
 import { AuthProvider } from "@/components/providers/supabase-auth-provider"
 import { PostHogProvider } from "@/components/providers/PostHogProvider"
 import metadata from './metadata'
+import { SupabaseProvider } from '@/components/providers/supabase-provider'
+import { SubscriptionProvider } from '@/components/providers/subscription-provider'
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -26,10 +28,14 @@ export default function RootLayout({
             enableSystem
             disableTransitionOnChange
           >
-            <AuthProvider>
-              {children}
-              <Toaster />
-            </AuthProvider>
+            <SupabaseProvider>
+              <AuthProvider>
+                <SubscriptionProvider>
+                  {children}
+                  <Toaster />
+                </SubscriptionProvider>
+              </AuthProvider>
+            </SupabaseProvider>
           </ThemeProvider>
         </PostHogProvider>
       </body>
