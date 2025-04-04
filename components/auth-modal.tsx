@@ -1,86 +1,78 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { createClient } from '@/lib/supabase'
 import { toast } from 'sonner'
-import { getSupabaseClient } from '@/lib/supabase/client'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
 
 interface AuthModalProps {
   isOpen: boolean
-  onOpenChange: (open: boolean) => void
+  onClose: () => void
 }
 
-export function AuthModal({ isOpen, onOpenChange }: AuthModalProps) {
+export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
   const [isLoading, setIsLoading] = useState(false)
-  const router = useRouter()
-  const supabase = getSupabaseClient()
+  const [email, setEmail] = useState('')
+  const supabase = createClient()
 
-  const handleGoogleSignIn = async () => {
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsLoading(true)
+
     try {
-      setIsLoading(true)
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
+      const { error } = await supabase.auth.signInWithOtp({
+        email,
         options: {
-          redirectTo: `${window.location.origin}/auth/callback`
-        }
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
+        },
       })
 
-      if (error) throw error
-    } catch (error: any) {
-      toast.error(error.message || 'Error signing in with Google')
-    } finally {
-      setIsLoading(false)
-    }
-  }
+      if (error) {
+        throw error
+      }
 
-  const handleAppleSignIn = async () => {
-    try {
-      setIsLoading(true)
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'apple',
-        options: {
-          redirectTo: `${window.location.origin}/auth/callback`
-        }
-      })
-
-      if (error) throw error
-    } catch (error: any) {
-      toast.error(error.message || 'Error signing in with Apple')
+      toast.success('Check your email for the magic link!')
+      onClose()
+    } catch (error) {
+      console.error('Error:', error)
+      toast.error('Failed to send magic link. Please try again.')
     } finally {
       setIsLoading(false)
     }
   }
 
   return (
-    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+    <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Sign In</DialogTitle>
+          <DialogTitle>Sign in to your account</DialogTitle>
         </DialogHeader>
-        <div className="space-y-4 p-4">
-          <Button 
-            className="w-full" 
-            onClick={handleGoogleSignIn} 
-            disabled={isLoading}
-          >
-            {isLoading ? 'Loading...' : 'Continue with Google'}
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="email">Email</Label>
+            <Input
+              id="email"
+              type="email"
+              placeholder="Enter your email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+            />
+          </div>
+          <Button type="submit" className="w-full" disabled={isLoading}>
+            {isLoading ? (
+              <div className="flex items-center justify-center">
+                <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white mr-2"></div>
+                Sending...
+              </div>
+            ) : (
+              'Send Magic Link'
+            )}
           </Button>
-          <Button 
-            className="w-full" 
-            onClick={handleAppleSignIn} 
-            disabled={isLoading}
-            variant="outline"
-          >
-            {isLoading ? 'Loading...' : 'Continue with Apple'}
-          </Button>
-        </div>
+        </form>
       </DialogContent>
     </Dialog>
   )

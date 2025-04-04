@@ -2,16 +2,14 @@
 
 import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
-import { Mic, MicOff, List, Settings, Play, Square, Trash2, Save, Loader2 } from "lucide-react"
-import Link from "next/link"
+import { Mic, MicOff, Play, Square, Trash2, Loader2 } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Card, CardContent } from "@/components/ui/card"
-import { useAuth } from "@/components/providers/supabase-auth-provider"
-import { getSupabaseClient } from "@/lib/supabase/client"
+import { useUser } from "@/components/providers/supabase-provider"
+import { createClient } from "@/lib/supabase"
 import { useRecorder } from "@/hooks/useRecorder"
 import { convertToMp3, needsConversion } from "@/lib/utils/audio-converter"
-import { AuthModal } from "@/components/auth-modal"
 import { BottomNav } from "@/components/BottomNav"
 import {
   Dialog,
@@ -22,66 +20,11 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import dynamic from "next/dynamic"
+import AuthModal from "@/components/auth-modal"
+import { saveToIndexedDB, getFromIndexedDB, deleteFromIndexedDB } from "@/lib/utils/indexedDB"
 
 // Dynamically import AudioSphere with no SSR
 const AudioSphere = dynamic<any>(() => import("@/components/AudioSphere"), { ssr: false })
-
-// IndexedDB setup
-const DB_NAME = 'audioBackupDB';
-const STORE_NAME = 'audioFiles';
-const DB_VERSION = 1;
-
-async function initDB() {
-  return new Promise<IDBDatabase>((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-    
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve(request.result);
-    
-    request.onupgradeneeded = (event) => {
-      const db = (event.target as IDBOpenDBRequest).result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME);
-      }
-    };
-  });
-}
-
-async function saveToIndexedDB(key: string, blob: Blob) {
-  const db = await initDB();
-  return new Promise<void>((resolve, reject) => {
-    const transaction = db.transaction(STORE_NAME, 'readwrite');
-    const store = transaction.objectStore(STORE_NAME);
-    const request = store.put(blob, key);
-    
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
-  });
-}
-
-async function getFromIndexedDB(key: string): Promise<Blob | null> {
-  const db = await initDB();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_NAME, 'readonly');
-    const store = transaction.objectStore(STORE_NAME);
-    const request = store.get(key);
-    
-    request.onsuccess = () => resolve(request.result || null);
-    request.onerror = () => reject(request.error);
-  });
-}
-
-async function deleteFromIndexedDB(key: string) {
-  const db = await initDB();
-  return new Promise<void>((resolve, reject) => {
-    const transaction = db.transaction(STORE_NAME, 'readwrite');
-    const store = transaction.objectStore(STORE_NAME);
-    const request = store.delete(key);
-    
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
-  });
-}
 
 export default function Home() {
   const router = useRouter()
@@ -99,23 +42,24 @@ export default function Home() {
 
   const [isPlaying, setIsPlaying] = useState(false)
   const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null)
-  const { user, isLoading } = useAuth()
+  const userContext = useUser()
+  const user = userContext?.user
   const [isSaving, setIsSaving] = useState(false)
   const [showAuthModal, setShowAuthModal] = useState(false)
-  const supabase = getSupabaseClient()
+  const supabase = createClient()
   const [showWelcomeDialog, setShowWelcomeDialog] = useState(false)
   const [audioData, setAudioData] = useState<Float32Array>()
   const analyserRef = useRef<AnalyserNode>()
   const animationFrameRef = useRef<number>()
 
   useEffect(() => {
-    // Show auth modal if user is not signed in and not loading
-    if (!isLoading && !user) {
+    // Show auth modal if user is not signed in and userContext is loaded
+    if (userContext !== null && !user) {
       setShowAuthModal(true)
     } else {
       setShowAuthModal(false)
     }
-  }, [user, isLoading])
+  }, [user, userContext])
 
   useEffect(() => {
     // Initialize audio element when audioUrl changes
@@ -201,111 +145,49 @@ export default function Home() {
       return
     }
 
+    setIsSaving(true)
     try {
-      setIsSaving(true)
-
-      // Generate unique filename early for both backup and upload
-      const timestamp = new Date().getTime()
-      const filename = `${timestamp}-${user.id}.mp3`
-      const backupKey = `backup-${filename}`
-
-      // Log original audio details
-      console.log('Original audio:', {
-        size: audioBlob.size,
-        type: audioBlob.type,
-        needsConversion: needsConversion(audioBlob)
-      });
+      // Save to IndexedDB as backup
+      const backupKey = `backup_${Date.now()}`
+      await saveToIndexedDB(backupKey, audioBlob)
 
       // Convert to MP3 if needed
-      let finalBlob: Blob;
-      try {
-        if (needsConversion(audioBlob)) {
-          console.log('Converting audio to MP3...');
-          finalBlob = await convertToMp3(audioBlob);
-          console.log('Conversion complete:', {
-            originalSize: audioBlob.size,
-            convertedSize: finalBlob.size,
-            convertedType: finalBlob.type
-          });
-        } else {
-          console.log('Audio is already MP3, no conversion needed');
-          finalBlob = audioBlob;
-        }
-
-        // Save to IndexedDB as backup
-        console.log('Saving backup to IndexedDB...');
-        await saveToIndexedDB(backupKey, finalBlob);
-        console.log('Backup saved successfully');
-
-      } catch (error) {
-        console.error("Error in conversion or backup:", error);
-        throw new Error("Failed to process audio recording. Please try again.");
+      let finalBlob = audioBlob
+      if (needsConversion(audioBlob)) {
+        finalBlob = await convertToMp3(audioBlob)
       }
-
-      console.log('Uploading to Supabase:', {
-        filename,
-        size: finalBlob.size,
-        type: finalBlob.type
-      });
 
       // Upload to Supabase Storage
+      const fileName = `recording_${Date.now()}.mp3`
       const { data: uploadData, error: uploadError } = await supabase.storage
-        .from("voice-memos")
-        .upload(`${user.id}/${filename}`, finalBlob, {
-          contentType: "audio/mp3",
-          cacheControl: "3600",
+        .from('recordings')
+        .upload(`${user.id}/${fileName}`, finalBlob, {
+          contentType: 'audio/mpeg',
+          cacheControl: '3600'
         })
 
-      if (uploadError) {
-        console.error("Upload error:", uploadError);
-        throw new Error("Failed to upload audio file: " + uploadError.message);
-      }
+      if (uploadError) throw uploadError
 
-      // Get public URL
-      const { data: { publicUrl } } = supabase.storage
-        .from("voice-memos")
-        .getPublicUrl(`${user.id}/${filename}`)
-
-      // Create initial memo with just the audio URL
-      const { data: memo, error: memoError } = await supabase
-        .from("memos")
+      // Create record in recordings table
+      const { error: dbError } = await supabase
+        .from('recordings')
         .insert({
           user_id: user.id,
-          title: `Voice Memo ${new Date().toLocaleString()}`,
-          storage_path: `${user.id}/${filename}`,
+          file_path: uploadData.path,
+          duration: recordingTime,
+          status: 'pending'
         })
-        .select()
-        .single()
 
-      if (memoError) {
-        console.error("Memo creation error:", memoError);
-        throw new Error("Failed to create memo: " + memoError.message);
-      }
+      if (dbError) throw dbError
 
-      if (!memo) {
-        throw new Error("Failed to create memo: No data returned");
-      }
+      // Clean up backup from IndexedDB
+      await deleteFromIndexedDB(backupKey)
 
-      // Delete backup after successful upload
-      try {
-        await deleteFromIndexedDB(backupKey);
-        console.log('Backup deleted successfully');
-      } catch (deleteError) {
-        console.warn('Failed to delete backup, but upload was successful:', deleteError);
-      }
-
-      toast.success("Recording saved! Processing your audio...")
-      resetRecording()
-      
-      // Redirect to the new note page with the memo ID
-      router.push(`/notes/new?id=${memo.id}`)
+      toast.success("Recording saved successfully!")
+      router.push('/recordings')
     } catch (error) {
-      console.error("Error saving recording:", error)
-      const errorMessage = error instanceof Error ? error.message : "An unexpected error occurred"
-      toast.error(errorMessage)
-      
-      // If there was an error, let the user know their recording is backed up
-      toast.info("Don't worry! Your recording is safely backed up in your browser.")
+      console.error('Error saving recording:', error)
+      toast.error("Failed to save recording. Your recording is backed up locally.")
     } finally {
       setIsSaving(false)
     }
@@ -315,214 +197,130 @@ export default function Home() {
     resetRecording()
   }
 
-  // Display error if there's any recording error
+  // Audio visualization setup
   useEffect(() => {
-    if (error) {
-      toast.error(error)
+    if (!audioElement) return
+
+    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
+    const analyser = audioContext.createAnalyser()
+    analyser.fftSize = 256
+    const bufferLength = analyser.frequencyBinCount
+    const dataArray = new Float32Array(bufferLength)
+
+    const source = audioContext.createMediaElementSource(audioElement)
+    source.connect(analyser)
+    analyser.connect(audioContext.destination)
+
+    analyserRef.current = analyser
+
+    const updateData = () => {
+      if (!analyserRef.current) return
+      analyserRef.current.getFloatFrequencyData(dataArray)
+      setAudioData(new Float32Array(dataArray))
+      animationFrameRef.current = requestAnimationFrame(updateData)
     }
-  }, [error])
 
-  // Initialize audio analyzer when recording starts
-  useEffect(() => {
-    if (isRecording) {
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
-      const analyser = audioContext.createAnalyser()
-      analyser.fftSize = 256
-      analyserRef.current = analyser
+    updateData()
 
-      // Get microphone stream
-      navigator.mediaDevices.getUserMedia({ audio: true })
-        .then(stream => {
-          const source = audioContext.createMediaStreamSource(stream)
-          source.connect(analyser)
-
-          // Start analyzing audio
-          const dataArray = new Float32Array(analyser.frequencyBinCount)
-          const updateData = () => {
-            analyser.getFloatTimeDomainData(dataArray)
-            setAudioData(dataArray)
-            animationFrameRef.current = requestAnimationFrame(updateData)
-          }
-          updateData()
-        })
-        .catch(err => {
-          console.error("Error accessing microphone:", err)
-          toast.error("Could not access microphone")
-        })
-
-      return () => {
-        if (animationFrameRef.current) {
-          cancelAnimationFrame(animationFrameRef.current)
-        }
-        audioContext.close()
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current)
       }
+      audioContext.close()
     }
-  }, [isRecording])
+  }, [audioElement])
 
-  // Add cleanup function for old backups
-  useEffect(() => {
-    const cleanupOldBackups = async () => {
-      try {
-        const db = await initDB();
-        const transaction = db.transaction(STORE_NAME, 'readonly');
-        const store = transaction.objectStore(STORE_NAME);
-        const request = store.getAllKeys();
-        
-        request.onsuccess = async () => {
-          const keys = request.result as string[];
-          const oneDayAgo = Date.now() - (24 * 60 * 60 * 1000);
-          
-          for (const key of keys) {
-            // Extract timestamp from key format: backup-{timestamp}-{userId}.mp3
-            const timestamp = parseInt(key.split('-')[1]);
-            if (timestamp < oneDayAgo) {
-              await deleteFromIndexedDB(key);
-              console.log('Deleted old backup:', key);
-            }
-          }
-        };
-      } catch (error) {
-        console.warn('Failed to cleanup old backups:', error);
-      }
-    };
-
-    cleanupOldBackups();
-  }, []);
-
-  if (isLoading) {
+  // If userContext is null, show loading state
+  if (userContext === null) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="animate-spin">
-          <Loader2 className="h-8 w-8" />
-        </div>
-      </div>
+      <main className="flex min-h-screen flex-col items-center justify-center p-4 pb-20 bg-background">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </main>
     )
   }
 
   return (
     <main className="flex min-h-screen flex-col items-center p-4 pb-20 bg-background">
-      {showAuthModal && <AuthModal isOpen={showAuthModal} onOpenChange={setShowAuthModal} />}
+      {showAuthModal && <AuthModal isOpen={showAuthModal} onClose={() => setShowAuthModal(false)} />}
       
       <Dialog open={showWelcomeDialog} onOpenChange={setShowWelcomeDialog}>
-        <DialogContent className="sm:max-w-[425px]">
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle>Welcome to Ghosted AI 👋</DialogTitle>
-            <DialogDescription className="space-y-4 pt-4">
-              <p>
-                We understand job searching can be tough and sometimes frustrating. 
-                Ghosted AI is your safe space to:
-              </p>
-              <ul className="list-disc pl-4 space-y-2">
-                <li>Vent about your job search experiences (5-30 minutes)</li>
-                <li>Share your interview stories, rejections, or ghosting experiences</li>
-                <li>Talk through your career concerns and challenges</li>
-              </ul>
-              <p className="font-medium pt-2">
-                After each recording, our AI will:
-              </p>
-              <ul className="list-disc pl-4 space-y-2">
-                <li>Provide empathetic, constructive feedback</li>
-                <li>Identify patterns in your job search</li>
-                <li>Suggest specific next steps and actions</li>
-                <li>Help track your progress over time</li>
-              </ul>
+            <DialogTitle>Welcome to Ghosted AI</DialogTitle>
+            <DialogDescription>
+              Record your dating app conversations and get AI feedback on what went wrong and how to improve.
+              <br /><br />
+              To get started:
+              <ol className="list-decimal list-inside mt-2">
+                <li>Record yourself reading your conversation</li>
+                <li>Include both sides of the chat</li>
+                <li>Record for at least 5 minutes</li>
+                <li>Get personalized feedback and tips</li>
+              </ol>
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button onClick={() => setShowWelcomeDialog(false)}>
-              Got it, let's start!
-            </Button>
+            <Button onClick={() => setShowWelcomeDialog(false)}>Get Started</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <div className="w-full max-w-md flex flex-col items-center justify-between min-h-[calc(100vh-5rem)]">
-        <div className="w-full pt-8">
-          <h1 className="text-2xl font-bold text-center mb-2">Ghosted AI</h1>
-          <p className="text-muted-foreground text-center mb-8">Your AI companion for navigating the tough job market</p>
-        </div>
+      <div className="w-full max-w-md space-y-4">
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex flex-col items-center space-y-4">
+              <div className="relative w-64 h-64">
+                <AudioSphere audioData={audioData} isRecording={isRecording} />
+              </div>
+              
+              <div className="text-2xl font-bold">
+                {formatTime(recordingTime)}
+              </div>
 
-        <div className="flex-1 flex flex-col items-center justify-center w-full">
-          {/* Audio Sphere */}
-          <div className="mb-8 w-full">
-            <AudioSphere isRecording={isRecording} audioData={audioData} />
-          </div>
-
-          {/* Timer */}
-          {isRecording && (
-            <div className="text-2xl font-mono mb-8 text-red-500">
-              {formatTime(recordingTime)}
-            </div>
-          )}
-
-          {/* Audio playback controls */}
-          {!isRecording && audioUrl && (
-            <div className="w-full mb-8">
-              <Card className="p-4">
-                <CardContent className="p-0 flex flex-col items-center">
-                  <div className="text-lg font-mono mb-4">{formatTime(recordingTime)}</div>
-                  <div className="flex gap-3">
-                    <Button 
-                      variant="outline" 
-                      size="icon" 
-                      className="rounded-full"
+              <div className="flex space-x-4">
+                {!audioUrl ? (
+                  <Button
+                    size="lg"
+                    variant={isRecording ? "destructive" : "default"}
+                    onClick={toggleRecording}
+                  >
+                    {isRecording ? <MicOff className="h-6 w-6" /> : <Mic className="h-6 w-6" />}
+                  </Button>
+                ) : (
+                  <>
+                    <Button
+                      size="lg"
+                      variant="outline"
                       onClick={togglePlayback}
                     >
-                      {isPlaying ? <Square size={18} /> : <Play size={18} />}
+                      {isPlaying ? <Square className="h-6 w-6" /> : <Play className="h-6 w-6" />}
                     </Button>
-                    <Button 
-                      variant="outline" 
-                      size="icon" 
-                      className="rounded-full text-red-500"
+                    <Button
+                      size="lg"
+                      variant="destructive"
                       onClick={handleDiscard}
                     >
-                      <Trash2 size={18} />
+                      <Trash2 className="h-6 w-6" />
                     </Button>
-                    <div className="flex flex-col items-center gap-2">
-                      <Button 
-                        variant="default" 
-                        className="rounded-full flex items-center gap-2"
-                        onClick={handleSave}
-                        disabled={isSaving}
-                      >
-                        Save and Process
-                      </Button>
-                      {isSaving && (
-                        <div className="flex flex-col items-center text-sm text-muted-foreground animate-pulse">
-                          <div className="flex items-center gap-2">
-                            <div className="w-2 h-2 bg-primary rounded-full animate-bounce [animation-delay:-0.3s]" />
-                            <div className="w-2 h-2 bg-primary rounded-full animate-bounce [animation-delay:-0.15s]" />
-                            <div className="w-2 h-2 bg-primary rounded-full animate-bounce" />
-                          </div>
-                          <p className="mt-2">Converting and uploading your recording...</p>
-                          <p className="text-xs mt-1">Please don't refresh the page</p>
-                        </div>
+                    <Button
+                      size="lg"
+                      onClick={handleSave}
+                      disabled={isSaving}
+                    >
+                      {isSaving ? (
+                        <Loader2 className="h-6 w-6 animate-spin" />
+                      ) : (
+                        "Save"
                       )}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+                    </Button>
+                  </>
+                )}
+              </div>
             </div>
-          )}
-
-          {/* Recording button */}
-          {!audioUrl && (
-            <>
-              <Button
-                onClick={toggleRecording}
-                size="lg"
-                className={`rounded-full w-20 h-20 ${isRecording ? "bg-red-500 hover:bg-red-600" : "bg-primary hover:bg-primary/90"}`}
-              >
-                {isRecording ? <MicOff size={32} /> : <Mic size={32} />}
-              </Button>
-
-              <p className="mt-4 text-muted-foreground">
-                {isRecording ? "Tap to stop recording" : "Tap to start recording"}
-              </p>
-            </>
-          )}
-        </div>
+          </CardContent>
+        </Card>
       </div>
+
       <BottomNav />
     </main>
   )
