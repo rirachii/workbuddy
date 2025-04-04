@@ -28,15 +28,15 @@ export function useUserSubscription() {
       }
 
       try {
+        // Use RPC function to get subscription status
         const { data, error } = await supabase
-          .from('private.user_subscriptions')
-          .select('subscription_status')
-          .eq('id', user.id)
-          .single()
+          .rpc('get_user_subscription_status', {
+            user_id: user.id
+          })
 
         if (error) throw error
 
-        setSubscriptionStatus(data?.subscription_status || null)
+        setSubscriptionStatus(data as SubscriptionStatus | null)
       } catch (error) {
         console.error('Error fetching subscription:', error)
       } finally {
@@ -65,15 +65,16 @@ export function useUserSubscription() {
       throw new Error('Must be logged in to cancel subscription')
     }
 
-    // This will redirect to RevenueCat's customer portal for cancellation
-    const { data: customerInfo } = await supabase
-      .from('private.user_subscriptions')
-      .select('subscription_status')
-      .eq('id', user.id)
-      .single()
+    // Get management URL through RPC function
+    const { data, error } = await supabase
+      .rpc('get_subscription_management_url', {
+        user_id: user.id
+      }) as { data: { management_url: string } | null, error: any }
 
-    if (customerInfo?.subscription_status?.managementUrl) {
-      window.location.href = customerInfo.subscription_status.managementUrl
+    if (error) throw error
+
+    if (data?.management_url) {
+      window.location.href = data.management_url as string
     } else {
       throw new Error('No management URL available')
     }

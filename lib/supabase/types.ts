@@ -94,7 +94,18 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      get_subscription_management_url: {
+        Args: {
+          user_id: string
+        }
+        Returns: Json
+      }
+      get_user_subscription_status: {
+        Args: {
+          user_id: string
+        }
+        Returns: Json
+      }
     }
     Enums: {
       [_ in never]: never
