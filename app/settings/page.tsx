@@ -14,7 +14,6 @@ import { BottomNav } from "@/components/BottomNav"
 
 export default function SettingsPage() {
   const { user, isLoading, signOut } = useAuth();
-  const router = useRouter();
   const [showAuthModal, setShowAuthModal] = useState(false);
 
   const handleSignOut = async () => {
