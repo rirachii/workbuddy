@@ -23,17 +23,19 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
   useEffect(() => {
     const setupRevenueCat = async () => {
       try {
-        console.log('Setting up RevenueCat with user:', user?.id);
-        // Initialize with user ID if available
-        initializeRevenueCat(user?.id);
-        
         if (user?.id) {
-          await checkSubscriptionStatus();
+          console.log('Setting up RevenueCat with user:', user.id);
+          const purchases = initializeRevenueCat(user.id);
+          if (purchases) {
+            await checkSubscriptionStatus();
+          }
+        } else {
+          console.log('User not logged in, waiting for user ID');
+          setIsLoading(false);
         }
       } catch (error) {
         console.error('Failed to setup RevenueCat:', error);
         toast.error('Failed to initialize subscription service');
-      } finally {
         setIsLoading(false);
       }
     };

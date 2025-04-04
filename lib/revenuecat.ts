@@ -35,15 +35,20 @@ export const initializeRevenueCat = (userId?: string) => {
     throw new Error('RevenueCat public key is not configured');
   }
   
-  console.log('Initializing RevenueCat with key:', REVENUECAT_PUBLIC_SDK_KEY.substring(0, 5) + '...');
-  console.log('User ID:', userId || 'anonymous');
-  
-  // Only initialize once
+  // Only initialize once and only with a valid user ID
   if (!isInitialized) {
-    const anonymousId = userId || Purchases.generateRevenueCatAnonymousAppUserId();
-    console.log('Using user ID for RevenueCat:', anonymousId);
-    Purchases.configure(REVENUECAT_PUBLIC_SDK_KEY, anonymousId);
-    isInitialized = true;
+    if (userId) {
+      console.log('Initializing RevenueCat with user ID:', userId);
+      Purchases.configure(REVENUECAT_PUBLIC_SDK_KEY, userId);
+      isInitialized = true;
+    } else {
+      console.log('Waiting for user ID before initializing RevenueCat');
+      return;
+    }
+  } else {
+    // If already initialized, get the shared instance
+    console.log('RevenueCat already initialized');
+    return Purchases.getSharedInstance();
   }
 };
 

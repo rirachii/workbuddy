@@ -14,12 +14,23 @@ export async function POST(req: Request) {
 
     const payload = await req.json()
     const event = payload.event
-    const userId = payload.app_user_id
+    let userId = payload.app_user_id
+    
+    console.log('Received webhook payload:', JSON.stringify(payload, null, 2));
     
     // Skip if no user ID
     if (!userId) {
       console.error('No user ID in webhook payload:', payload)
       return new NextResponse('No user ID provided', { status: 400 })
+    }
+
+    // Check if this is an anonymous ID (which we don't expect)
+    if (userId.startsWith('$RCAnonymousID:')) {
+      console.log('Unexpected anonymous ID received:', userId);
+      console.log('Full webhook payload:', JSON.stringify(payload, null, 2));
+      
+      // Either reject the webhook
+      return new NextResponse('Anonymous IDs not supported', { status: 400 });
     }
 
     const cookieStore = cookies()
@@ -53,7 +64,7 @@ export async function POST(req: Request) {
             : 30 * 24 * 60 * 60 * 1000   // 30 days
         ))
 
-        await supabase.rpc('update_subscription_status', {
+        await supabase.rpc('private.update_subscription_status', {
           user_id: userId,
           new_status: {
             plan: event.period_type === 'ANNUAL' ? 'yearly' : 'monthly',
@@ -69,7 +80,7 @@ export async function POST(req: Request) {
       case 'EXPIRATION':
       case 'BILLING_ISSUE':
         // Subscription ended or failed
-        await supabase.rpc('update_subscription_status', {
+        await supabase.rpc('private.update_subscription_status', {
           user_id: userId,
           new_status: {
             plan: 'free',
