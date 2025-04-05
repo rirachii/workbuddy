@@ -7,6 +7,23 @@ const isDevelopment = process.env.NODE_ENV === 'development'
 
 export async function POST(req: Request) {
   try {
+    // Clone the request to read the body for logging
+    const reqForLogging = req.clone()
+    
+    // Log relevant request information
+    const requestBody = await reqForLogging.text()
+    console.log('Webhook request details:', {
+      method: req.method,
+      url: req.url,
+      headers: Object.fromEntries(req.headers.entries()),
+      body: requestBody.length > 1000 ? requestBody.substring(0, 1000) + '...' : requestBody
+    })
+    
+    // Parse the body as JSON for later use
+    const payload = JSON.parse(requestBody)
+    const event = payload.event
+    let userId = payload.app_user_id
+    
     // Verify RevenueCat webhook authentication
     const authHeader = req.headers.get('Authorization') || 
       req.headers.get('authorization') || 
@@ -40,15 +57,9 @@ export async function POST(req: Request) {
       }
     }
 
-    const payload = await req.json()
-    const event = payload.event
-    let userId = payload.app_user_id
-    
-    console.log('Received webhook payload:', JSON.stringify(payload, null, 2));
-    
     // Skip if no user ID
     if (!userId) {
-      console.error('No user ID in webhook payload:', payload)
+      console.error('No user ID in webhook payload')
       return new NextResponse('No user ID provided', { status: 400 })
     }
 
