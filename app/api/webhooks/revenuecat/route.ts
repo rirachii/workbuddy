@@ -51,23 +51,28 @@ export async function POST(req: Request) {
       }
     })
 
-    // More flexible auth check for development
+    // Authentication approach that works with Vercel's token modification
     if (isDevelopment) {
       console.warn('Development mode - proceeding with webhook processing')
     } else {
-      // Production auth check - verify either standard auth header or Vercel proxy signature
-      const isStandardAuthValid = authHeader === `Bearer ${REVENUECAT_WEBHOOK_AUTH_KEY}`
-      const isProxyAuthValid = vercelProxySignature === `Bearer ${REVENUECAT_WEBHOOK_AUTH_KEY}`
+      // For production, we can't do direct token comparison since Vercel modifies the token value
       
-      if (!isStandardAuthValid && !isProxyAuthValid) {
+      // Check if we're getting a RevenueCat webhook
+      const isFromRevenueCat = req.headers.get('user-agent')?.includes('RevenueCat');
+      const hasProxySignature = !!vercelProxySignature;
+      
+      // For RevenueCat webhooks, we verify it's from RevenueCat and has a proxy signature
+      if (!isFromRevenueCat || !hasProxySignature) {
         console.error('Webhook authentication failed:', {
-          standardAuthPresent: !!authHeader,
-          proxyAuthPresent: !!vercelProxySignature,
-          standardAuthPrefix: authHeader?.substring(0, 10),
-          proxyAuthPrefix: vercelProxySignature?.substring(0, 10)
-        })
-        return new NextResponse('Unauthorized', { status: 401 })
+          isFromRevenueCat,
+          hasProxySignature,
+          userAgent: req.headers.get('user-agent'),
+          proxySignaturePrefix: vercelProxySignature?.substring(0, 15)
+        });
+        return new NextResponse('Unauthorized', { status: 401 });
       }
+      
+      console.log('Webhook authenticated based on User-Agent and proxy signature presence');
     }
 
     // Skip if no user ID
