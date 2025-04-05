@@ -22,7 +22,7 @@ export async function POST(req: Request) {
     // Parse the body as JSON for later use
     const payload = JSON.parse(requestBody)
     const event = payload.event
-    let userId = payload.app_user_id
+    let userId = event.app_user_id
     
     // Verify RevenueCat webhook authentication - check multiple possible header locations
     const authHeader = req.headers.get('Authorization') || 
@@ -104,7 +104,32 @@ export async function POST(req: Request) {
       }
     )
 
-    // Handle different event types
+    // Special handling for test events
+    if (event.type === 'TEST') {
+      console.log('Processing TEST event');
+      
+      // For test events, we'll update with a temporary subscription
+      // This is useful for testing the webhook flow in sandbox mode
+      try {
+        await supabase.rpc('private.update_subscription_status', {
+          user_id: userId,
+          new_status: {
+            plan: 'monthly', // Default to monthly for test events
+            active: true,
+            trial_used: false,
+            expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 days
+            updated_at: new Date().toISOString()
+          }
+        });
+        console.log('Successfully updated subscription status for TEST event');
+      } catch (error) {
+        console.error('Failed to update subscription for TEST event:', error);
+      }
+      
+      return new NextResponse('Test event processed', { status: 200 });
+    }
+    
+    // Handle different event types for real purchases
     switch (event.type) {
       case 'INITIAL_PURCHASE':
       case 'RENEWAL':
@@ -116,31 +141,60 @@ export async function POST(req: Request) {
             : 30 * 24 * 60 * 60 * 1000   // 30 days
         ))
 
-        await supabase.rpc('private.update_subscription_status', {
-          user_id: userId,
-          new_status: {
-            plan: event.period_type === 'ANNUAL' ? 'yearly' : 'monthly',
-            active: true,
-            trial_used: event.is_trial_conversion || false,
-            expires_at: expirationDate.toISOString(),
-            updated_at: new Date().toISOString()
+        try {
+          const result = await supabase.rpc('private.update_subscription_status', {
+            user_id: userId,
+            new_status: {
+              plan: event.period_type === 'ANNUAL' ? 'yearly' : 'monthly',
+              active: true,
+              trial_used: event.is_trial_conversion || false,
+              expires_at: expirationDate.toISOString(),
+              updated_at: new Date().toISOString()
+            }
+          });
+          
+          if (result.error) {
+            throw result.error;
           }
-        })
+          
+          console.log('Successfully updated subscription status to active', {
+            userId,
+            plan: event.period_type === 'ANNUAL' ? 'yearly' : 'monthly',
+            expiresAt: expirationDate.toISOString()
+          });
+        } catch (error) {
+          console.error('Failed to update subscription status:', error);
+          throw error; // Re-throw to be caught by the outer try/catch
+        }
         break
 
       case 'CANCELLATION':
       case 'EXPIRATION':
       case 'BILLING_ISSUE':
         // Subscription ended or failed
-        await supabase.rpc('private.update_subscription_status', {
-          user_id: userId,
-          new_status: {
-            plan: 'free',
-            active: false,
-            trial_used: true, // Keep trial used status
-            updated_at: new Date().toISOString()
+        try {
+          const result = await supabase.rpc('private.update_subscription_status', {
+            user_id: userId,
+            new_status: {
+              plan: 'free',
+              active: false,
+              trial_used: true, // Keep trial used status
+              updated_at: new Date().toISOString()
+            }
+          });
+          
+          if (result.error) {
+            throw result.error;
           }
-        })
+          
+          console.log('Successfully updated subscription status to inactive', {
+            userId,
+            reason: event.type
+          });
+        } catch (error) {
+          console.error('Failed to update subscription status:', error);
+          throw error; // Re-throw to be caught by the outer try/catch
+        }
         break
 
       default:
