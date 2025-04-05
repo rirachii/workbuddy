@@ -8,7 +8,9 @@ const isDevelopment = process.env.NODE_ENV === 'development'
 export async function POST(req: Request) {
   try {
     // Verify RevenueCat webhook authentication
-    const authHeader = req.headers.get('Authorization')
+    const authHeader = req.headers.get('Authorization') || 
+      req.headers.get('authorization') || 
+      req.headers.get('AUTHORIZATION');    
     
     // Detailed logging for debugging auth issues
     console.log('Auth header present:', !!authHeader)
