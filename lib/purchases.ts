@@ -1,17 +1,17 @@
 import { Purchases, Package } from '@revenuecat/purchases-js';
-import { supabase } from './supabase';
+import { createClient } from './supabase';
 
 let purchasesInstance: Purchases | null = null;
 
 // Initialize RevenueCat when auth state changes
-supabase.auth.onAuthStateChange(async (event, session) => {
+createClient().auth.onAuthStateChange(async (event, session) => {
   if (typeof window === 'undefined') return;
 
   const userId = session?.user?.id;
   
   if (userId) {
     // User logged in
-    purchasesInstance = await Purchases.configure(
+    Purchases.configure(
       process.env.NEXT_PUBLIC_REVENUECAT_KEY!,
       userId
     );
@@ -22,7 +22,7 @@ supabase.auth.onAuthStateChange(async (event, session) => {
     }
   } else {
     // Anonymous user
-    purchasesInstance = await Purchases.configure(
+    Purchases.configure(
       process.env.NEXT_PUBLIC_REVENUECAT_KEY!,
       'anonymous' // Required appUserId parameter
     );
@@ -31,7 +31,7 @@ supabase.auth.onAuthStateChange(async (event, session) => {
 
 // Initialize new user profile with free plan
 async function initializeUserProfile(userId: string, email: string | undefined) {
-  const { data: existingProfile } = await supabase
+  const { data: existingProfile } = await createClient()
     .from('profiles')
     .select('id')
     .eq('id', userId)
@@ -51,21 +51,21 @@ export async function getCurrentSubscriptionStatus() {
       throw new Error("RevenueCat not initialized");
     }
     
-    const customerInfo = await purchasesInstance.getCustomerInfo();
+    const customerInfo = await Purchases.getCustomerInfo();
     
     // Sync with Supabase if user is logged in
-    const { data: { user } } = await supabase.auth.getUser();
+    const { data: { user } } = await createClient().auth.getUser();
     
     if (user?.id) {
       // Get current profile to preserve trial_used status
-      const { data: profile } = await supabase
+      const { data: profile } = await createClient()
         .from('private.profiles')
         .select('subscription_status')
         .eq('id', user.id)
         .single();
 
       // Use the secure function to update subscription status
-      const { error } = await supabase
+      const { error } = await createClient()
         .rpc('update_subscription_status', {
           user_id: user.id,
           new_status: {
@@ -92,7 +92,7 @@ export async function purchasePackage(pkg: Package) {
     if (!purchasesInstance) {
       throw new Error("RevenueCat not initialized");
     }
-    const { customerInfo } = await purchasesInstance.purchasePackage(pkg);
+        const { customerInfo } = await Purchases.purchasePackage(pkg);
     
     // Sync with Supabase after successful purchase
     await getCurrentSubscriptionStatus();
@@ -109,7 +109,7 @@ export async function getOfferings() {
     if (!purchasesInstance) {
       throw new Error("RevenueCat not initialized");
     }
-    const offerings = await purchasesInstance.getOfferings();
+    const offerings = await Purchases.getOfferings();
     return offerings;
   } catch (error) {
     console.error('Error fetching offerings:', error);

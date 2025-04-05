@@ -8,7 +8,6 @@ import { Separator } from "@/components/ui/separator"
 import { useAuth } from "@/components/providers/supabase-auth-provider"
 import { SubscriptionManager } from '@/components/subscription/SubscriptionManager'
 import { useState } from "react"
-import { AuthModal } from "@/components/auth-modal"
 import { toast } from "sonner"
 import { BottomNav } from "@/components/BottomNav"
 import { SubscriptionPlans } from "@/components/subscription/SubscriptionPlans"
@@ -237,10 +236,7 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      <AuthModal 
-        isOpen={showAuthModal} 
-        onOpenChange={setShowAuthModal}
-      />
+      {showAuthModal && <AuthModal isOpen={showAuthModal} onClose={() => setShowAuthModal(false)} />}
       <BottomNav />
     </main>
   );
