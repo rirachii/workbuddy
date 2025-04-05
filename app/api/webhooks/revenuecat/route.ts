@@ -24,34 +24,47 @@ export async function POST(req: Request) {
     const event = payload.event
     let userId = payload.app_user_id
     
-    // Verify RevenueCat webhook authentication
+    // Verify RevenueCat webhook authentication - check multiple possible header locations
     const authHeader = req.headers.get('Authorization') || 
       req.headers.get('authorization') || 
-      req.headers.get('AUTHORIZATION');    
+      req.headers.get('AUTHORIZATION')
+    
+    const vercelProxySignature = req.headers.get('x-vercel-proxy-signature')
+    const vercelProxySignatureTs = req.headers.get('x-vercel-proxy-signature-ts')
     
     // Detailed logging for debugging auth issues
-    console.log('Auth header present:', !!authHeader)
-    console.log('Auth header prefix correct:', authHeader?.startsWith('Bearer '))
-    console.log('Env var present:', !!REVENUECAT_WEBHOOK_AUTH_KEY)
-    console.log('Auth header length:', authHeader?.length)
-    console.log('Env var length:', REVENUECAT_WEBHOOK_AUTH_KEY?.length)
+    console.log('Auth details:', {
+      standardAuthHeader: {
+        present: !!authHeader,
+        prefixCorrect: authHeader?.startsWith('Bearer '),
+        length: authHeader?.length
+      },
+      vercelProxy: {
+        signaturePresent: !!vercelProxySignature,
+        signaturePrefixCorrect: vercelProxySignature?.startsWith('Bearer '),
+        timestampPresent: !!vercelProxySignatureTs,
+        signature: vercelProxySignature?.substring(0, 15) + '...',
+      },
+      envVar: {
+        present: !!REVENUECAT_WEBHOOK_AUTH_KEY,
+        length: REVENUECAT_WEBHOOK_AUTH_KEY?.length
+      }
+    })
 
     // More flexible auth check for development
     if (isDevelopment) {
-      if (!authHeader || !REVENUECAT_WEBHOOK_AUTH_KEY) {
-        console.warn('Missing auth header or webhook key - proceeding anyway for testing')
-      } else if (authHeader !== `Bearer ${REVENUECAT_WEBHOOK_AUTH_KEY}`) {
-        console.warn('Auth mismatch, but proceeding for testing')
-        console.warn('Expected:', `Bearer ${REVENUECAT_WEBHOOK_AUTH_KEY.substring(0, 3)}...`)
-        console.warn('Received:', authHeader.substring(0, 10) + '...')
-      }
+      console.warn('Development mode - proceeding with webhook processing')
     } else {
-      // Production auth check
-      if (authHeader !== `Bearer ${REVENUECAT_WEBHOOK_AUTH_KEY}`) {
+      // Production auth check - verify either standard auth header or Vercel proxy signature
+      const isStandardAuthValid = authHeader === `Bearer ${REVENUECAT_WEBHOOK_AUTH_KEY}`
+      const isProxyAuthValid = vercelProxySignature === `Bearer ${REVENUECAT_WEBHOOK_AUTH_KEY}`
+      
+      if (!isStandardAuthValid && !isProxyAuthValid) {
         console.error('Webhook authentication failed:', {
-          headerPresent: !!authHeader,
-          keyPresent: !!REVENUECAT_WEBHOOK_AUTH_KEY,
-          headerPrefix: authHeader?.substring(0, 6)
+          standardAuthPresent: !!authHeader,
+          proxyAuthPresent: !!vercelProxySignature,
+          standardAuthPrefix: authHeader?.substring(0, 10),
+          proxyAuthPrefix: vercelProxySignature?.substring(0, 10)
         })
         return new NextResponse('Unauthorized', { status: 401 })
       }
