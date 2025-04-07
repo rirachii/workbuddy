@@ -10,9 +10,10 @@ import { toast } from 'sonner';
 import { CancelSubscriptionButton } from './CancelSubscriptionButton';
 
 export function SubscriptionPlans() {
-  const { subscriptionStatus, purchaseSubscription, switchPlan, isLoading } = useSubscription();
+  const { subscriptionStatus, purchaseSubscription, switchPlan, isLoading, refreshSubscriptionStatus } = useSubscription();
   const [isPurchasing, setIsPurchasing] = useState(false);
   const [isUpgrading, setIsUpgrading] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const prices = {
     monthly: 9.99,
@@ -48,6 +49,8 @@ export function SubscriptionPlans() {
     try {
       setIsUpgrading(true);
       await switchPlan('yearly');
+      // Force refresh subscription status after upgrade
+      await refreshSubscriptionStatus();
       toast.success('Successfully upgraded to yearly plan!');
     } catch (error) {
       console.error('Upgrade error:', error);
@@ -60,15 +63,59 @@ export function SubscriptionPlans() {
       setIsUpgrading(false);
     }
   };
+  
+  const handleRefreshStatus = async () => {
+    try {
+      setIsRefreshing(true);
+      await refreshSubscriptionStatus();
+      toast.success('Subscription status refreshed');
+    } catch (error) {
+      console.error('Error refreshing status:', error);
+      toast.error('Failed to refresh subscription status');
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   if (isLoading) {
     return <div className="flex justify-center p-4">Loading subscription details...</div>;
   }
+  
+  // Debug information section (only in development)
+  const SubscriptionDebugInfo = () => {
+    // Only show in development mode or with a special query param
+    const isDebugMode = process.env.NODE_ENV === 'development' || new URLSearchParams(window.location.search).has('debug');
+    
+    if (!isDebugMode) return null;
+    
+    return (
+      <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-md text-xs">
+        <div className="flex justify-between mb-2">
+          <span className="font-bold">Subscription Debug Info:</span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRefreshStatus}
+            disabled={isRefreshing}
+            className="h-6 px-2 py-0 text-xs"
+          >
+            {isRefreshing ? 'Refreshing...' : 'Refresh Status'}
+          </Button>
+        </div>
+        <div>
+          <p><span className="font-semibold">Is Pro Member:</span> {subscriptionStatus?.isProMember ? 'Yes' : 'No'}</p>
+          <p><span className="font-semibold">Current Plan:</span> {subscriptionStatus?.currentPlan || 'None'}</p>
+          <p><span className="font-semibold">Expiry Date:</span> {subscriptionStatus?.expiryDate?.toLocaleString() || 'None'}</p>
+        </div>
+      </div>
+    );
+  };
 
   // Free Plan (No subscription)
   if (!subscriptionStatus?.isProMember) {
     return (
       <div className="space-y-6">
+        <SubscriptionDebugInfo />
         <Card className="p-6 border-dashed">
           <div className="flex items-center justify-between mb-4">
             <div>
@@ -159,6 +206,7 @@ export function SubscriptionPlans() {
   if (subscriptionStatus.isProMember && subscriptionStatus.currentPlan === 'monthly') {
     return (
       <div className="space-y-6">
+        <SubscriptionDebugInfo />
         <Card className="p-6 bg-gradient-to-r from-yellow-500/10 to-purple-500/10">
           <div className="flex items-center justify-between mb-4">
             <div>
@@ -222,6 +270,7 @@ export function SubscriptionPlans() {
   // Yearly Pro Subscription (can only cancel, no downgrade option)
   return (
     <div className="space-y-6">
+      <SubscriptionDebugInfo />
       <Card className="p-6 bg-gradient-to-r from-yellow-500/10 to-purple-500/10">
         <div className="flex items-center justify-between mb-4">
           <div>

@@ -13,6 +13,7 @@ type SubscriptionContextType = {
   switchPlan: (newPlan: 'monthly' | 'yearly') => Promise<void>;
   getManagementUrl: () => Promise<string>;
   cancelSubscription: () => Promise<void>;
+  refreshSubscriptionStatus: () => Promise<void>;
 };
 
 const SubscriptionContext = createContext<SubscriptionContextType | undefined>(undefined);
@@ -28,6 +29,23 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
       try {
         if (user?.id) {
           console.log('Setting up RevenueCat with user:', user.id);
+          
+          // Check if we have cached subscription data in sessionStorage
+          const cachedData = sessionStorage.getItem(`subscription_${user.id}`);
+          if (cachedData) {
+            try {
+              const parsed = JSON.parse(cachedData);
+              console.log('Found cached subscription data:', parsed);
+              // Convert expiry date string back to Date object if it exists
+              if (parsed.expiryDate) {
+                parsed.expiryDate = new Date(parsed.expiryDate);
+              }
+              setSubscriptionStatus(parsed);
+            } catch (e) {
+              console.error('Error parsing cached subscription data:', e);
+            }
+          }
+          
           const purchases = initializeRevenueCat(user.id);
           if (purchases) {
             await checkSubscriptionStatus();
@@ -63,22 +81,79 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
         }
       }
 
-      // Determine the plan type based on the active subscriptions
+      // Enhanced logic to determine the plan type from active subscriptions
       let currentPlan: SubscriptionPlan | null = null;
       const activeSubscriptions = Array.from(customerInfo.activeSubscriptions || []);
+      
+      console.log('Detected active subscriptions:', activeSubscriptions);
+      
       if (activeSubscriptions.length > 0) {
-        const activeSubscription = activeSubscriptions[0];
-        currentPlan = activeSubscription.includes('yearly') ? 'yearly' : 'monthly';
+        // Try various ways to identify yearly plan
+        for (const subscription of activeSubscriptions) {
+          console.log('Checking subscription:', subscription);
+          
+          // More comprehensive check for yearly identifiers
+          if (
+            subscription.toLowerCase().includes('yearly') ||
+            subscription.toLowerCase().includes('annual') ||
+            subscription.toLowerCase().includes('year') ||
+            subscription.includes('ghosted_pro_yearly')
+          ) {
+            console.log('Identified as yearly plan:', subscription);
+            currentPlan = 'yearly';
+            break;
+          } else if (
+            subscription.toLowerCase().includes('monthly') ||
+            subscription.toLowerCase().includes('month') ||
+            subscription.includes('ghosted_pro_monthly')
+          ) {
+            console.log('Identified as monthly plan:', subscription);
+            currentPlan = 'monthly';
+            // Don't break here, continue checking in case there's a yearly subscription too
+          }
+        }
+        
+        // If we still couldn't determine, use the first subscription as fallback
+        if (!currentPlan && activeSubscriptions.length > 0) {
+          const fallbackPlan = activeSubscriptions[0];
+          console.log('Using fallback plan determination:', fallbackPlan);
+          currentPlan = fallbackPlan.includes('year') ? 'yearly' : 'monthly';
+        }
       }
 
-      setSubscriptionStatus({
+      console.log('Final subscription determination:', {
+        isProMember: hasActiveSubscription,
+        currentPlan,
+        expiryDate
+      });
+
+      const newStatus = {
         isProMember: hasActiveSubscription,
         currentPlan,
         expiryDate,
-      });
+      };
+      
+      setSubscriptionStatus(newStatus);
+      
+      // Cache the subscription status in sessionStorage
+      if (user?.id) {
+        try {
+          // Need to convert Date to string for JSON serialization
+          const cacheData = {
+            ...newStatus,
+            expiryDate: expiryDate ? expiryDate.toISOString() : null
+          };
+          sessionStorage.setItem(`subscription_${user.id}`, JSON.stringify(cacheData));
+          console.log('Cached subscription data:', cacheData);
+        } catch (e) {
+          console.error('Error caching subscription data:', e);
+        }
+      }
     } catch (error) {
       console.error('Failed to check subscription status:', error);
       toast.error('Failed to check subscription status');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -122,11 +197,23 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
 
       // Purchase the package
       console.log('Purchasing package:', targetPackage);
-      await Purchases.getSharedInstance().purchase({
+      const purchaseResult = await Purchases.getSharedInstance().purchase({
         rcPackage: targetPackage,
       });
       
-      // Refresh subscription status
+      console.log('Purchase result:', purchaseResult);
+      
+      // Immediately update the UI with new subscription data
+      const currentPlan = productId === SUBSCRIPTION_PLANS.yearly ? 'yearly' : 'monthly';
+      
+      setSubscriptionStatus({
+        isProMember: true,
+        currentPlan: currentPlan,
+        expiryDate: purchaseResult.customerInfo.latestExpirationDate ? 
+          new Date(purchaseResult.customerInfo.latestExpirationDate) : null
+      });
+      
+      // Also refresh subscription status for completeness
       await checkSubscriptionStatus();
       
       toast.success('Subscription purchased successfully!');
@@ -188,11 +275,21 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
       }
 
       // Switch to the new package
-      await Purchases.getSharedInstance().purchase({
+      const purchaseResult = await Purchases.getSharedInstance().purchase({
         rcPackage: targetPackage,
       });
       
-      // Refresh subscription status
+      console.log('Purchase result:', purchaseResult);
+      
+      // Force a refresh of the local state
+      setSubscriptionStatus({
+        isProMember: true,
+        currentPlan: newPlan,
+        expiryDate: purchaseResult.customerInfo.latestExpirationDate ? 
+          new Date(purchaseResult.customerInfo.latestExpirationDate) : null
+      });
+      
+      // Also refresh subscription status to make sure everything is in sync
       await checkSubscriptionStatus();
       
       toast.success(`Successfully switched to ${newPlan} subscription plan!`);
@@ -248,6 +345,26 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
     }
   };
 
+  // Public method to force refresh subscription status
+  const refreshSubscriptionStatus = async () => {
+    if (!user) {
+      return;
+    }
+    
+    setIsLoading(true);
+    
+    try {
+      // Forcefully fetch fresh data from RevenueCat
+      await Purchases.getSharedInstance().restorePurchases();
+      await checkSubscriptionStatus();
+      console.log('Subscription status refreshed');
+    } catch (error) {
+      console.error('Failed to refresh subscription status:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <SubscriptionContext.Provider
       value={{
@@ -257,6 +374,7 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
         switchPlan,
         getManagementUrl,
         cancelSubscription,
+        refreshSubscriptionStatus,
       }}
     >
       {children}
