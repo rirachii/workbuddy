@@ -79,18 +79,6 @@ export function SubscriptionExpiry() {
               Your subscription has been cancelled but will remain active until <span className="font-semibold">{formattedDate}</span> at {formattedTime}.
             </p>
             
-            {countdown && (
-              <div className="flex items-center mt-2 text-sm">
-                <CalendarClock className="h-4 w-4 mr-1 text-orange-600 dark:text-orange-400" />
-                <span className="text-orange-700 dark:text-orange-400">
-                  Time remaining: 
-                  <span className="font-semibold px-1">
-                    {countdown.days} {countdown.days === 1 ? 'day' : 'days'}, 
-                    {countdown.hours} {countdown.hours === 1 ? 'hour' : 'hours'}, 
-                  </span>
-                </span>
-              </div>
-            )}
           </div>
         </div>
       </CardContent>

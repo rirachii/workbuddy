@@ -18,8 +18,8 @@ export function SubscriptionPlans() {
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const prices = {
-    monthly: 9.99,
-    yearly: 99.99, // Save ~17%
+    monthly: 10,
+    yearly: 99, // Save ~17%
   };
 
   const handlePurchase = async (plan: 'monthly' | 'yearly') => {
@@ -138,7 +138,7 @@ export function SubscriptionPlans() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Monthly Pro Plan Card */}
-          <Card className="p-6">
+          <Card className="p-6 flex flex-col h-full">
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h3 className="text-xl font-bold">Pro Monthly</h3>
@@ -147,24 +147,27 @@ export function SubscriptionPlans() {
               <Sparkles className="h-6 w-6 text-yellow-500" />
             </div>
 
-            <div className="mb-6">
+            <div className="flex-grow">
               <p className="text-2xl font-bold">
                 ${prices.monthly}
                 <span className="text-lg text-muted-foreground">/month</span>
               </p>
+              <p className="text-sm text-muted-foreground font-medium">&nbsp;</p>
             </div>
 
-            <Button
-              className="w-full"
-              onClick={() => handlePurchase('monthly')}
-              disabled={isPurchasing}
-            >
-              {isPurchasing ? 'Processing...' : 'Subscribe Monthly'}
-            </Button>
+            <div className="mt-auto pt-6">
+              <Button
+                className="w-full"
+                onClick={() => handlePurchase('monthly')}
+                disabled={isPurchasing}
+              >
+                {isPurchasing ? 'Processing...' : 'Subscribe Monthly'}
+              </Button>
+            </div>
           </Card>
 
           {/* Yearly Pro Plan Card */}
-          <Card className="p-6 border-2 border-primary/20">
+          <Card className="p-6 flex flex-col h-full border-2 border-primary/20">
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h3 className="text-xl font-bold">Pro Yearly</h3>
@@ -173,7 +176,7 @@ export function SubscriptionPlans() {
               <Sparkles className="h-6 w-6 text-yellow-500" />
             </div>
 
-            <div className="mb-6">
+            <div className="flex-grow">
               <p className="text-2xl font-bold">
                 ${prices.yearly}
                 <span className="text-lg text-muted-foreground">/year</span>
@@ -181,14 +184,16 @@ export function SubscriptionPlans() {
               <p className="text-sm text-green-600 font-medium">Save ~17% compared to monthly</p>
             </div>
 
-            <Button
-              className="w-full"
-              variant="default"
-              onClick={() => handlePurchase('yearly')}
-              disabled={isPurchasing}
-            >
-              {isPurchasing ? 'Processing...' : 'Subscribe Yearly'}
-            </Button>
+            <div className="mt-auto pt-6">
+              <Button
+                className="w-full"
+                variant="default"
+                onClick={() => handlePurchase('yearly')}
+                disabled={isPurchasing}
+              >
+                {isPurchasing ? 'Processing...' : 'Subscribe Yearly'}
+              </Button>
+            </div>
           </Card>
         </div>
 
