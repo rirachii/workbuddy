@@ -2,11 +2,11 @@
 
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
-import { ArrowLeft, Moon, Sun, Volume2, Calendar, Bell, Lock, Sparkles } from "lucide-react"
+import { ArrowLeft, Moon, Sun, Volume2, Calendar, Bell, Lock, Sparkles, Mail, HelpCircle, FileText, Star, ExternalLink } from "lucide-react"
 import Link from "next/link"
 import { Separator } from "@/components/ui/separator"
 import { useAuth } from "@/components/providers/supabase-auth-provider"
-import { SubscriptionManager } from '@/components/subscription/SubscriptionManager'
+import { useTheme } from "@/components/providers/theme-provider"
 import { useState } from "react"
 import { AuthModal } from "@/components/auth-modal"
 import { toast } from "sonner"
@@ -17,6 +17,7 @@ import { useSubscription } from "@/components/providers/subscription-provider"
 export default function SettingsPage() {
   const { user, isLoading, signOut } = useAuth();
   const { subscriptionStatus } = useSubscription();
+  const { theme, setTheme } = useTheme();
   const [showAuthModal, setShowAuthModal] = useState(false);
 
   const handleSignOut = async () => {
@@ -60,7 +61,11 @@ export default function SettingsPage() {
                 <Sun size={18} />
                 <span>Light Mode</span>
               </div>
-              <Switch id="theme-mode" />
+              <Switch 
+                id="theme-mode" 
+                checked={theme === 'dark'}
+                onCheckedChange={(checked) => setTheme(checked ? 'dark' : 'light')}
+              />
               <div className="flex items-center gap-2">
                 <Moon size={18} />
                 <span>Dark Mode</span>
@@ -214,6 +219,84 @@ export default function SettingsPage() {
             </div>
           </>
         )}
+
+        <Separator />
+
+        <div>
+          <h2 className="text-lg font-medium mb-4">App Information</h2>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Mail size={18} />
+                <div>
+                  <span>Contact Support</span>
+                  <p className="text-sm text-muted-foreground">Get help with your account</p>
+                </div>
+              </div>
+              <Button variant="ghost" size="sm" asChild>
+                <Link href="mailto:michelle@veloraai.com">
+                  <ExternalLink size={16} className="mr-2" />
+                  Email
+                </Link>
+              </Button>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Star size={18} />
+                <div>
+                  <span>Rate the App</span>
+                  <p className="text-sm text-muted-foreground">Love the app? Let us know!</p>
+                </div>
+              </div>
+              <Button variant="ghost" size="sm" asChild>
+                <Link href="https://apps.apple.com/app/your-app-id" target="_blank">
+                  <ExternalLink size={16} className="mr-2" />
+                  App Store
+                </Link>
+              </Button>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <FileText size={18} />
+                <div>
+                  <span>Terms & Privacy</span>
+                  <p className="text-sm text-muted-foreground">Read our policies</p>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="ghost" size="sm" asChild>
+                  <Link href="/terms">Terms</Link>
+                </Button>
+                <Button variant="ghost" size="sm" asChild>
+                  <Link href="/privacy">Privacy</Link>
+                </Button>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <HelpCircle size={18} />
+                <div>
+                  <span>Help Center</span>
+                  <p className="text-sm text-muted-foreground">Browse FAQs and guides</p>
+                </div>
+              </div>
+              <Button variant="ghost" size="sm" asChild>
+                <Link href="/help" target="_blank">
+                  <ExternalLink size={16} className="mr-2" />
+                  Visit
+                </Link>
+              </Button>
+            </div>
+
+            <div className="text-sm text-muted-foreground text-center mt-6">
+              <p>Version 1.0.0</p>
+              <p>© 2024 Ghosted AI. All rights reserved.</p>
+            </div>
+          </div>
+        </div>
 
         <div className="pt-4 pb-8">
           {isLoading ? (

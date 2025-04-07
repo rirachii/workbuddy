@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import { Inter } from "next/font/google"
 import "./globals.css"
-import { ThemeProvider } from "@/components/theme-provider"
+import { ThemeProvider } from "@/components/providers/theme-provider"
 import { Toaster } from "@/components/ui/sonner"
 import { AuthProvider } from "@/components/providers/supabase-auth-provider"
 import { PostHogProvider } from "@/components/providers/PostHogProvider"
@@ -22,12 +22,7 @@ export default function RootLayout({
     <html lang="en">
       <body className={inter.className}>
         <PostHogProvider>
-          <ThemeProvider
-            attribute="class"
-            defaultTheme="system"
-            enableSystem
-            disableTransitionOnChange
-          >
+          <ThemeProvider>
             <SupabaseProvider>
               <AuthProvider>
                 <SubscriptionProvider>

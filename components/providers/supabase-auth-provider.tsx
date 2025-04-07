@@ -23,16 +23,54 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const { supabase } = useSupabase()
 
+  // Handle auth errors and session recovery
+  const handleAuthError = async (error: any) => {
+    console.error('Auth error:', error)
+    
+    // If it's a refresh token error, try to recover the session
+    if (error.message?.includes('refresh token') || error.code === 'refresh_token_not_found') {
+      try {
+        // Try to get a new session
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+        if (sessionError) throw sessionError
+        
+        if (session) {
+          setUser(session.user)
+          return true // Recovered successfully
+        }
+      } catch (recoveryError) {
+        console.error('Failed to recover session:', recoveryError)
+      }
+    }
+    
+    // If we couldn't recover, sign out
+    await handleSignOut()
+    return false
+  }
+
+  const handleSignOut = async () => {
+    try {
+      await supabase.auth.signOut()
+      setUser(null)
+      router.refresh()
+      router.push('/')
+    } catch (error) {
+      console.error('Error during sign out:', error)
+    }
+  }
+
   useEffect(() => {
     // Check current session
     const checkSession = async () => {
       try {
         const { data: { session }, error } = await supabase.auth.getSession()
-        if (error) throw error
+        if (error) {
+          const recovered = await handleAuthError(error)
+          if (!recovered) return
+        }
         setUser(session?.user ?? null)
       } catch (error) {
-        console.error('Error checking session:', error)
-        setUser(null)
+        await handleAuthError(error)
       } finally {
         setIsLoading(false)
       }
@@ -44,8 +82,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
-      setUser(session?.user ?? null)
-      router.refresh()
+      if (event === 'TOKEN_REFRESHED') {
+        console.log('Token refreshed successfully')
+      }
+      
+      if (event === 'SIGNED_OUT') {
+        setUser(null)
+        router.refresh()
+        router.push('/')
+      } else if (session) {
+        setUser(session.user)
+        router.refresh()
+      }
     })
 
     return () => {
@@ -54,15 +102,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [router, supabase])
 
   const signOut = async () => {
-    try {
-      const { error } = await supabase.auth.signOut()
-      if (error) throw error
-      setUser(null)
-      router.refresh()
-      router.push('/')
-    } catch (error) {
-      console.error('Error signing out:', error)
-    }
+    await handleSignOut()
   }
 
   const value = {
