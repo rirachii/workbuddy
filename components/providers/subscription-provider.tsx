@@ -10,6 +10,9 @@ type SubscriptionContextType = {
   isLoading: boolean;
   subscriptionStatus: UserSubscriptionStatus | null;
   purchaseSubscription: (productId: string) => Promise<void>;
+  switchPlan: (newPlan: 'monthly' | 'yearly') => Promise<void>;
+  getManagementUrl: () => Promise<string>;
+  cancelSubscription: () => Promise<void>;
 };
 
 const SubscriptionContext = createContext<SubscriptionContextType | undefined>(undefined);
@@ -139,12 +142,121 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
     }
   };
 
+  const switchPlan = async (newPlan: 'monthly' | 'yearly') => {
+    if (!user) {
+      toast.error('Please sign in to switch plans');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      
+      // Validate plan switch - only allowing monthly to yearly, not vice versa
+      if (subscriptionStatus?.currentPlan === 'yearly' && newPlan === 'monthly') {
+        throw new Error('Downgrading from yearly to monthly is not supported. Please cancel your yearly subscription first if you wish to switch to monthly billing.');
+      }
+      
+      // Get current subscription
+      const customerInfo = await Purchases.getSharedInstance().getCustomerInfo();
+      const activeSubscriptions = Array.from(customerInfo.activeSubscriptions || []);
+      
+      if (activeSubscriptions.length === 0) {
+        throw new Error('No active subscription found');
+      }
+
+      console.log('Switching from', subscriptionStatus?.currentPlan, 'to', newPlan);
+      console.log('Active subscriptions:', activeSubscriptions);
+
+      // Get available offerings
+      const offerings = await Purchases.getSharedInstance().getOfferings();
+      if (!offerings.current) {
+        throw new Error('No subscription plans are currently available');
+      }
+
+      // Find the package for the new plan
+      const targetProductId = newPlan === 'yearly' ? 'ghosted_pro_yearly' : 'ghosted_pro_monthly';
+      const targetPackage = offerings.current.availablePackages.find(
+        (pkg: Package) => pkg.webBillingProduct.identifier === targetProductId
+      );
+
+      if (!targetPackage) {
+        console.error('Target package not found:', {
+          targetProductId,
+          availablePackages: offerings.current.availablePackages.map(pkg => pkg.webBillingProduct.identifier)
+        });
+        throw new Error(`Plan "${targetProductId}" not found`);
+      }
+
+      // Switch to the new package
+      await Purchases.getSharedInstance().purchase({
+        rcPackage: targetPackage,
+      });
+      
+      // Refresh subscription status
+      await checkSubscriptionStatus();
+      
+      toast.success(`Successfully switched to ${newPlan} subscription plan!`);
+    } catch (error) {
+      if (error instanceof PurchasesError && error.errorCode === ErrorCode.UserCancelledError) {
+        toast.info('Plan switch cancelled');
+      } else {
+        console.error('Failed to switch subscription plan:', error);
+        toast.error(error instanceof Error ? error.message : 'Failed to switch subscription plan');
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const getManagementUrl = async () => {
+    try {
+      const url = await Purchases.getSharedInstance().getCustomerInfo();
+      const managementUrl = url.managementURL;
+      if (!managementUrl) {
+        throw new Error('Management URL not available');
+      }
+      return managementUrl;
+    } catch (error) {
+      console.error('Failed to get management URL:', error);
+      throw new Error('Failed to get subscription management URL');
+    }
+  };
+
+  const cancelSubscription = async () => {
+    if (!user) {
+      toast.error('Please sign in to cancel your subscription');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      
+      // Get management URL and redirect user
+      const managementUrl = await getManagementUrl();
+      
+      if (managementUrl) {
+        window.location.href = managementUrl;
+      } else {
+        throw new Error('Unable to get subscription management URL');
+      }
+    } catch (error) {
+      console.error('Failed to cancel subscription:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to cancel subscription');
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <SubscriptionContext.Provider
       value={{
         isLoading,
         subscriptionStatus,
         purchaseSubscription,
+        switchPlan,
+        getManagementUrl,
+        cancelSubscription,
       }}
     >
       {children}

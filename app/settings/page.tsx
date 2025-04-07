@@ -44,13 +44,8 @@ export default function SettingsPage() {
         {user && (
           <>
             <div>
-              <h2 className="text-lg font-medium mb-4">Subscription</h2>
+              <h2 className="text-lg font-bold mb-4">Your Subscription</h2>
               <SubscriptionPlans />
-            </div>
-
-            <div className="container py-8">
-              <h1>Account Settings</h1>
-              <SubscriptionManager />
             </div>
 
             <Separator />

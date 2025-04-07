@@ -53,31 +53,9 @@ export function useUserSubscription() {
       throw new Error('Must be logged in to switch plans')
     }
 
-    // Use RevenueCat to handle the actual subscription change
     await purchaseSubscription(
       newPlan === 'yearly' ? 'ghosted_pro_yearly' : 'ghosted_pro_monthly'
     )
-  }
-
-  // Cancel subscription (downgrade to free)
-  const cancelSubscription = async () => {
-    if (!user) {
-      throw new Error('Must be logged in to cancel subscription')
-    }
-
-    // Get management URL through RPC function
-    const { data, error } = await supabase
-      .rpc('get_subscription_management_url', {
-        user_id: user.id
-      }) as { data: { management_url: string } | null, error: any }
-
-    if (error) throw error
-
-    if (data?.management_url) {
-      window.location.href = data.management_url as string
-    } else {
-      throw new Error('No management URL available')
-    }
   }
 
   return {
@@ -86,6 +64,5 @@ export function useUserSubscription() {
     isSubscribed: subscriptionStatus?.active && subscriptionStatus?.plan !== 'free',
     currentPlan: subscriptionStatus?.plan || 'free',
     switchPlan,
-    cancelSubscription,
   }
 } 

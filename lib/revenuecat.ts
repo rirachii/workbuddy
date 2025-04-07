@@ -32,23 +32,45 @@ let isInitialized = false;
 // Initialize RevenueCat
 export const initializeRevenueCat = (userId?: string) => {
   if (!REVENUECAT_PUBLIC_SDK_KEY) {
+    console.error('RevenueCat public key is not configured');
     throw new Error('RevenueCat public key is not configured');
   }
   
-  // Only initialize once and only with a valid user ID
-  if (!isInitialized) {
-    if (userId) {
-      console.log('Initializing RevenueCat with user ID:', userId);
-      Purchases.configure(REVENUECAT_PUBLIC_SDK_KEY, userId);
-      isInitialized = true;
+  // Skip initialization in SSR context
+  if (typeof window === 'undefined') {
+    console.log('Skipping RevenueCat initialization in server context');
+    return null;
+  }
+  
+  try {
+    // Only initialize once and only with a valid user ID
+    if (!isInitialized) {
+      if (userId) {
+        console.log('Initializing RevenueCat with user ID:', userId);
+        
+        // Check if we're in a real browser environment
+        if (typeof window !== 'undefined' && window.navigator) {
+          Purchases.configure(REVENUECAT_PUBLIC_SDK_KEY, userId);
+          isInitialized = true;
+        } else {
+          console.log('Browser environment not available, skipping RevenueCat initialization');
+          return null;
+        }
+      } else {
+        console.log('Waiting for user ID before initializing RevenueCat');
+        return null;
+      }
     } else {
-      console.log('Waiting for user ID before initializing RevenueCat');
-      return;
+      // If already initialized, get the shared instance
+      console.log('RevenueCat already initialized');
+      return Purchases.getSharedInstance();
     }
-  } else {
-    // If already initialized, get the shared instance
-    console.log('RevenueCat already initialized');
+    
     return Purchases.getSharedInstance();
+  } catch (error) {
+    console.error('Failed to initialize RevenueCat:', error);
+    // Don't throw here - we want to gracefully degrade if RevenueCat fails
+    return null;
   }
 };
 

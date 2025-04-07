@@ -1,113 +1,64 @@
 'use client'
 
 import { useState } from 'react'
-import { useUserSubscription } from '@/lib/hooks/useUserSubscription'
 import { Button } from '@/components/ui/button'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
+import { useUserSubscription } from '@/lib/hooks/useUserSubscription'
 import { toast } from 'sonner'
+import { Loader2 } from 'lucide-react'
+import { formatDate } from 'date-fns'
+import { useSubscription } from '@/components/providers/subscription-provider'
+import { CancelSubscriptionButton } from './CancelSubscriptionButton'
 
 export function SubscriptionManager() {
-  const { 
-    subscriptionStatus, 
-    isLoading, 
-    currentPlan,
-    switchPlan,
-    cancelSubscription 
-  } = useUserSubscription()
-  const [isUpdating, setIsUpdating] = useState(false)
-
-  if (isLoading) {
-    return <div>Loading subscription details...</div>
-  }
+  const { subscriptionStatus } = useUserSubscription()
+  const { switchPlan } = useSubscription()
+  const [isLoading, setIsLoading] = useState(false)
 
   const handlePlanSwitch = async (newPlan: 'monthly' | 'yearly') => {
     try {
-      setIsUpdating(true)
+      setIsLoading(true)
       await switchPlan(newPlan)
-      toast.success(`Successfully switched to ${newPlan} plan`)
+      toast.success(`Successfully switched to ${newPlan} plan!`)
     } catch (error) {
       console.error('Failed to switch plan:', error)
-      toast.error('Failed to switch plan. Please try again.')
+      toast.error(error instanceof Error ? error.message : 'Failed to switch plan')
     } finally {
-      setIsUpdating(false)
+      setIsLoading(false)
     }
   }
 
-  const handleCancellation = async () => {
-    try {
-      setIsUpdating(true)
-      await cancelSubscription()
-      // No need for success toast as user will be redirected to management portal
-    } catch (error) {
-      console.error('Failed to cancel subscription:', error)
-      toast.error('Failed to access subscription management. Please try again.')
-      setIsUpdating(false)
-    }
+  if (!subscriptionStatus?.active || subscriptionStatus.plan === 'free') {
+    return null
   }
 
   return (
-    <Card className="w-full max-w-2xl mx-auto">
-      <CardHeader>
-        <CardTitle>Subscription Management</CardTitle>
-        <CardDescription>
-          Manage your subscription plan and billing
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-4">
-          <div>
-            <h3 className="font-medium">Current Plan</h3>
-            <p className="text-sm text-muted-foreground capitalize">
-              {currentPlan} {subscriptionStatus?.active ? '(Active)' : '(Inactive)'}
-            </p>
-            {subscriptionStatus?.expires_at && (
-              <p className="text-sm text-muted-foreground">
-                Expires: {new Date(subscriptionStatus.expires_at).toLocaleDateString()}
-              </p>
-            )}
-          </div>
-
-          {subscriptionStatus?.active && currentPlan !== 'free' && (
-            <div>
-              <h3 className="font-medium mb-2">Switch Plan</h3>
-              <div className="flex gap-4">
-                <Button
-                  variant={currentPlan === 'monthly' ? 'secondary' : 'outline'}
-                  onClick={() => handlePlanSwitch('monthly')}
-                  disabled={isUpdating || currentPlan === 'monthly'}
-                >
-                  Switch to Monthly
-                </Button>
-                <Button
-                  variant={currentPlan === 'yearly' ? 'secondary' : 'outline'}
-                  onClick={() => handlePlanSwitch('yearly')}
-                  disabled={isUpdating || currentPlan === 'yearly'}
-                >
-                  Switch to Yearly
-                </Button>
-              </div>
-            </div>
+    <div className="space-y-4">
+      <div className="flex flex-col space-y-2">
+        <h3 className="text-lg font-medium">Current Plan</h3>
+        <p className="text-sm text-muted-foreground">
+          You are currently on the {subscriptionStatus.plan} plan.
+          {subscriptionStatus.expires_at && (
+            <> Your subscription will renew on {formatDate(subscriptionStatus.expires_at, 'MMM d, yyyy')}.</>
           )}
-        </div>
-      </CardContent>
-      <CardFooter>
-        {subscriptionStatus?.active && currentPlan !== 'free' && (
+        </p>
+      </div>
+
+      <div className="flex flex-col space-y-2">
+        <h4 className="text-sm font-medium">Plan Management</h4>
+        <div className="flex space-x-2">
           <Button
-            variant="destructive"
-            onClick={handleCancellation}
-            disabled={isUpdating}
+            variant="outline"
+            onClick={() => handlePlanSwitch(subscriptionStatus.plan === 'monthly' ? 'yearly' : 'monthly')}
+            disabled={isLoading}
           >
-            Cancel Subscription
+            {isLoading ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : null}
+            Switch to {subscriptionStatus.plan === 'monthly' ? 'Yearly' : 'Monthly'} Plan
           </Button>
-        )}
-      </CardFooter>
-    </Card>
+          <CancelSubscriptionButton disabled={isLoading} />
+        </div>
+      </div>
+    </div>
   )
 } 
