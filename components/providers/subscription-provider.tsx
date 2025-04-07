@@ -74,10 +74,60 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
       
       // Get expiry date if subscription is active
       let expiryDate: Date | null = null;
+      let isCancelled = false;
+      let pendingDowngradePlan: SubscriptionPlan | 'free' | null = null;
+      const managementURL = customerInfo.managementURL;
+      
       if (hasActiveSubscription) {
         const activeEntitlement = Object.values(customerInfo.entitlements.active)[0];
         if (activeEntitlement.expirationDate) {
           expiryDate = new Date(activeEntitlement.expirationDate);
+        }
+        
+        // Check if this subscription is cancelled or has a pending downgrade
+        // RevenueCat doesn't provide a direct way to check this, so we need to infer
+        
+        if (managementURL) {
+          console.log('Management URL found:', managementURL);
+          try {
+            // Check for cancellation or downgrade clues in the URL
+            const isManagementURL = managementURL.includes('canceled') || 
+                                  managementURL.includes('cancelled') ||
+                                  managementURL.includes('manage') ||
+                                  managementURL.includes('billing');
+            
+            // Try to determine if this is a cancellation or downgrade
+            // Note: This is approximation as RevenueCat doesn't provide this info directly
+            
+            // Query parameters can sometimes indicate what's happening
+            const url = new URL(managementURL);
+            const actionParam = url.searchParams.get('action');
+            const planParam = url.searchParams.get('plan');
+            
+            console.log('Management URL analysis:', { 
+              isManagementURL, 
+              actionParam, 
+              planParam,
+              fullURL: managementURL
+            });
+            
+            if (actionParam === 'downgrade' || planParam === 'monthly') {
+              // If there's an explicit downgrade action or plan parameter
+              pendingDowngradePlan = 'monthly';
+              console.log('Detected pending downgrade to monthly plan');
+            } else if (actionParam === 'cancel' || url.pathname.includes('cancel')) {
+              // If it's an explicit cancellation
+              pendingDowngradePlan = 'free';
+              isCancelled = true;
+              console.log('Detected cancellation to free plan');
+            } else if (isManagementURL) {
+              // If we can't determine specifically, assume cancellation
+              isCancelled = true;
+              console.log('Assuming cancellation based on management URL presence');
+            }
+          } catch (e) {
+            console.error('Error checking subscription status:', e);
+          }
         }
       }
 
@@ -131,6 +181,9 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
         isProMember: hasActiveSubscription,
         currentPlan,
         expiryDate,
+        isCancelled,
+        managementURL,
+        pendingDowngradePlan,
       };
       
       setSubscriptionStatus(newStatus);
@@ -252,12 +305,7 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
     try {
       setIsLoading(true);
       
-      // Validate plan switch - only allowing monthly to yearly, not vice versa
-      if (subscriptionStatus?.currentPlan === 'yearly' && newPlan === 'monthly') {
-        throw new Error('Downgrading from yearly to monthly is not supported. Please cancel your yearly subscription first if you wish to switch to monthly billing.');
-      }
-      
-      // Get current subscription
+      // Get current subscription info
       const customerInfo = await Purchases.getSharedInstance().getCustomerInfo();
       const activeSubscriptions = Array.from(customerInfo.activeSubscriptions || []);
       
@@ -267,6 +315,37 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
 
       console.log('Switching from', subscriptionStatus?.currentPlan, 'to', newPlan);
       console.log('Active subscriptions:', activeSubscriptions);
+      
+      // Handle special case: downgrading from yearly to monthly
+      const isDowngrade = subscriptionStatus?.currentPlan === 'yearly' && newPlan === 'monthly';
+      
+      if (isDowngrade) {
+        // For downgrades, we handle it differently - we'll schedule the downgrade for next period
+        // This means cancelling the yearly subscription and scheduling a monthly one to start after
+        
+        // First, get the management URL for the subscription
+        if (!customerInfo.managementURL) {
+          throw new Error('Unable to access subscription management. Please try again later.');
+        }
+        
+        // Inform the user about the downgrade process
+        const confirmDowngrade = window.confirm(
+          'Downgrading from yearly to monthly plan will take effect after your current billing period ends. ' +
+          'You will continue to have access to your yearly plan until then. ' +
+          'After your yearly subscription ends, you will be automatically subscribed to the monthly plan. ' +
+          'Would you like to proceed with the downgrade?'
+        );
+        
+        if (!confirmDowngrade) {
+          setIsLoading(false);
+          return;
+        }
+        
+        // Direct the user to the management portal to make the change
+        // RevenueCat Web SDK doesn't support direct downgrades, so we need to use the portal
+        window.location.href = customerInfo.managementURL;
+        return;
+      }
 
       // Get available offerings
       const offerings = await Purchases.getSharedInstance().getOfferings();

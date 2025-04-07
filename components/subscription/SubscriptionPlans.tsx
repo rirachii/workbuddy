@@ -8,6 +8,8 @@ import { PLAN_FEATURES, SUBSCRIPTION_PLANS } from '@/lib/revenuecat';
 import { useSubscription } from '../providers/subscription-provider';
 import { toast } from 'sonner';
 import { CancelSubscriptionButton } from './CancelSubscriptionButton';
+import { SubscriptionExpiry } from './SubscriptionExpiry';
+import { DowngradeNotice } from './DowngradeNotice';
 
 export function SubscriptionPlans() {
   const { subscriptionStatus, purchaseSubscription, switchPlan, isLoading, refreshSubscriptionStatus } = useSubscription();
@@ -207,39 +209,48 @@ export function SubscriptionPlans() {
     return (
       <div className="space-y-6">
         <SubscriptionDebugInfo />
-        <Card className="p-6 bg-gradient-to-r from-yellow-500/10 to-purple-500/10">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="text-2xl font-bold">Pro Monthly</h3>
-              <p className="text-muted-foreground">Current Plan</p>
+        <div className="space-y-4">
+          <Card className="p-6 bg-gradient-to-r from-yellow-500/10 to-purple-500/10">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-2xl font-bold">Pro Monthly</h3>
+                <p className="text-muted-foreground">Current Plan</p>
+              </div>
+              <Sparkles className="h-8 w-8 text-yellow-500" />
             </div>
-            <Sparkles className="h-8 w-8 text-yellow-500" />
-          </div>
 
-          {subscriptionStatus?.expiryDate && (
-            <p className="text-sm text-muted-foreground mb-6">
-              Next billing date: {subscriptionStatus.expiryDate.toLocaleDateString()}
-            </p>
-          )}
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-            <Button
-              variant="outline"
-              onClick={handleUpgradeToYearly}
-              disabled={isUpgrading}
-              className="w-full"
-            >
-              {isUpgrading ? 'Processing...' : 'Upgrade to Yearly'}
-            </Button>
+            {subscriptionStatus?.expiryDate && (
+              <p className="text-sm text-muted-foreground mb-6">
+                Next billing date: {subscriptionStatus.expiryDate.toLocaleDateString()}
+              </p>
+            )}
             
-            <CancelSubscriptionButton 
-              variant="outline"
-              className="w-full"
-            >
-              Cancel Subscription
-            </CancelSubscriptionButton>
-          </div>
-        </Card>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+              <Button
+                variant="outline"
+                onClick={handleUpgradeToYearly}
+                disabled={isUpgrading}
+                className="w-full"
+              >
+                {isUpgrading ? 'Processing...' : 'Upgrade to Yearly'}
+              </Button>
+              
+              <CancelSubscriptionButton 
+                variant="outline"
+                className="w-full"
+                disabled={subscriptionStatus?.pendingDowngradePlan === 'free'}
+              >
+                {subscriptionStatus?.pendingDowngradePlan === 'free' ? 'Cancellation Scheduled' : 'Cancel Subscription'}
+              </CancelSubscriptionButton>
+            </div>
+          </Card>
+          
+          {/* Show downgrade notice if a plan change is pending */}
+          <DowngradeNotice />
+          
+          {/* Only show expiry notice if there's an expiry date but no future renewal */}
+          <SubscriptionExpiry />
+        </div>
 
         {/* Yearly upgrade info */}
         <Card className="p-4 border-dashed">
@@ -271,30 +282,50 @@ export function SubscriptionPlans() {
   return (
     <div className="space-y-6">
       <SubscriptionDebugInfo />
-      <Card className="p-6 bg-gradient-to-r from-yellow-500/10 to-purple-500/10">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h3 className="text-2xl font-bold">Pro Yearly</h3>
-            <p className="text-muted-foreground">Current Plan</p>
+      <div className="space-y-4">
+        <Card className="p-6 bg-gradient-to-r from-yellow-500/10 to-purple-500/10">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-2xl font-bold">Pro Yearly</h3>
+              <p className="text-muted-foreground">Current Plan</p>
+            </div>
+            <Sparkles className="h-8 w-8 text-yellow-500" />
           </div>
-          <Sparkles className="h-8 w-8 text-yellow-500" />
-        </div>
 
-        {subscriptionStatus?.expiryDate && (
-          <p className="text-sm text-muted-foreground mb-6">
-            Next billing date: {subscriptionStatus.expiryDate.toLocaleDateString()}
-          </p>
-        )}
+          {subscriptionStatus?.expiryDate && (
+            <p className="text-sm text-muted-foreground mb-6">
+              Next billing date: {subscriptionStatus.expiryDate.toLocaleDateString()}
+            </p>
+          )}
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+            <Button
+              variant="outline"
+              onClick={() => switchPlan('monthly')}
+              disabled={isUpgrading || subscriptionStatus?.pendingDowngradePlan === 'monthly'}
+              className="w-full"
+            >
+              {isUpgrading ? 'Processing...' : 
+               subscriptionStatus?.pendingDowngradePlan === 'monthly' ? 'Downgrade Scheduled' : 
+               'Downgrade to Monthly'}
+            </Button>
+            
+            <CancelSubscriptionButton 
+              variant="outline"
+              className="w-full"
+              disabled={subscriptionStatus?.pendingDowngradePlan === 'free'}
+            >
+              {subscriptionStatus?.pendingDowngradePlan === 'free' ? 'Cancellation Scheduled' : 'Cancel Subscription'}
+            </CancelSubscriptionButton>
+          </div>
+        </Card>
         
-        <div className="mt-4">
-          <CancelSubscriptionButton 
-            variant="outline"
-            className="w-full"
-          >
-            Cancel Subscription
-          </CancelSubscriptionButton>
-        </div>
-      </Card>
+        {/* Show downgrade notice if a plan change is pending */}
+        <DowngradeNotice />
+        
+        {/* Only show expiry notice if there's an expiry date but no future renewal */}
+        <SubscriptionExpiry />
+      </div>
 
       <div className="text-sm text-muted-foreground">
         <p>Your Pro plan includes:</p>

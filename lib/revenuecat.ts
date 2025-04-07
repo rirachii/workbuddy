@@ -81,6 +81,9 @@ export type UserSubscriptionStatus = {
   isProMember: boolean;
   currentPlan: SubscriptionPlan | null;
   expiryDate: Date | null;
+  isCancelled?: boolean;
+  managementURL?: string | null;
+  pendingDowngradePlan?: SubscriptionPlan | 'free' | null;
 };
 
 // Helper functions
