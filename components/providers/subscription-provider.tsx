@@ -206,11 +206,25 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
       // Immediately update the UI with new subscription data
       const currentPlan = productId === SUBSCRIPTION_PLANS.yearly ? 'yearly' : 'monthly';
       
+      // Find the expiration date from active entitlements
+      let expiryDate: Date | null = null;
+      const activeEntitlements = Object.values(purchaseResult.customerInfo.entitlements.active);
+      if (activeEntitlements.length > 0) {
+        const latestExpirationDate = activeEntitlements
+          .map(entitlement => entitlement.expirationDate)
+          .filter(date => !!date)
+          .sort()
+          .pop();
+          
+        if (latestExpirationDate) {
+          expiryDate = new Date(latestExpirationDate);
+        }
+      }
+      
       setSubscriptionStatus({
         isProMember: true,
         currentPlan: currentPlan,
-        expiryDate: purchaseResult.customerInfo.latestExpirationDate ? 
-          new Date(purchaseResult.customerInfo.latestExpirationDate) : null
+        expiryDate: expiryDate
       });
       
       // Also refresh subscription status for completeness
@@ -282,11 +296,25 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
       console.log('Purchase result:', purchaseResult);
       
       // Force a refresh of the local state
+      // Find the expiration date from active entitlements
+      let expiryDate: Date | null = null;
+      const activeEntitlements = Object.values(purchaseResult.customerInfo.entitlements.active);
+      if (activeEntitlements.length > 0) {
+        const latestExpirationDate = activeEntitlements
+          .map(entitlement => entitlement.expirationDate)
+          .filter(date => !!date)
+          .sort()
+          .pop();
+          
+        if (latestExpirationDate) {
+          expiryDate = new Date(latestExpirationDate);
+        }
+      }
+      
       setSubscriptionStatus({
         isProMember: true,
         currentPlan: newPlan,
-        expiryDate: purchaseResult.customerInfo.latestExpirationDate ? 
-          new Date(purchaseResult.customerInfo.latestExpirationDate) : null
+        expiryDate: expiryDate
       });
       
       // Also refresh subscription status to make sure everything is in sync
@@ -354,8 +382,8 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
     setIsLoading(true);
     
     try {
-      // Forcefully fetch fresh data from RevenueCat
-      await Purchases.getSharedInstance().restorePurchases();
+      // The Web SDK doesn't have restorePurchases, so we'll just refresh the customer info
+      await Purchases.getSharedInstance().getCustomerInfo();
       await checkSubscriptionStatus();
       console.log('Subscription status refreshed');
     } catch (error) {
