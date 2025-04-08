@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { useAuth } from '@/components/providers/supabase-auth-provider';
-import { Purchases, Package, CustomerInfo, PurchasesError, ErrorCode } from '@revenuecat/purchases-js';
+import { Purchases, Package, PurchasesError, ErrorCode } from '@revenuecat/purchases-js';
 import { initializeRevenueCat, UserSubscriptionStatus, SubscriptionPlan, SUBSCRIPTION_PLANS } from '@/lib/revenuecat';
 import { toast } from 'sonner';
 

@@ -5,26 +5,27 @@ const REVENUECAT_PUBLIC_SDK_KEY = process.env.NEXT_PUBLIC_REVENUECAT_KEY!;
 
 // Subscription plan IDs
 export const SUBSCRIPTION_PLANS = {
-  monthly: 'ghosted_pro_monthly',
-  yearly: 'ghosted_pro_yearly',
+  monthly: "pro_monthly",
+  yearly: "pro_yearly",
 } as const;
 
 // Plan features
 export const PLAN_FEATURES = {
   free: [
-    'Basic voice memos',
-    'Limited transcriptions',
-    'Basic AI analysis',
-    '5 memos per month',
+    "Up to 50 voice memos",
+    "10-minute maximum recording duration",
+    "Basic AI analysis of recordings",
+    "Basic voice memo organization",
+    "Simple todo task management",
   ],
   pro: [
-    'Unlimited voice memos',
-    'Unlimited transcriptions',
-    'Advanced AI analysis',
-    'Priority support',
-    'Calendar integration',
-    'Export capabilities',
-  ],
+    "Unlimited voice memos",
+    "Extended recording duration (up to 1 hour)",
+    "Advanced AI analysis and insights",
+    "Calendar integration for job search tracking",
+    "Export capabilities (PDF, Audio formats)",
+    "Priority support",
+  ]
 };
 
 let isInitialized = false;

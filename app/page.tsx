@@ -141,30 +141,26 @@ export default function Home() {
   }, [])
 
   // Recording time limits (in seconds)
-  const MIN_RECORDING_TIME = 5 * 60
-  const MAX_RECORDING_TIME = 30 * 60
+  const MAX_RECORDING_TIME = 10 * 60 // 10 minutes
 
   // Warning for recording time limits
   useEffect(() => {
     if (isRecording) {
       // Warning when approaching max time
       if (recordingTime === MAX_RECORDING_TIME - 60) {
-        toast.warning("Recording will stop in 1 minute (30 minute limit)")
+        toast.warning("Recording will stop in 1 minute (10 minute limit)")
       }
       
       // Auto-stop at max time
       if (recordingTime >= MAX_RECORDING_TIME) {
         stopRecording()
-        toast.info("Recording stopped - maximum length reached (30 minutes)")
+        toast.info("Recording stopped - maximum length reached (10 minutes)")
       }
     }
   }, [isRecording, recordingTime, stopRecording])
 
   // Check minimum recording time when stopping
   const handleStopRecording = () => {
-    if (recordingTime < MIN_RECORDING_TIME) {
-      toast.warning("Please record for at least 5 minutes to get meaningful feedback")
-    }
     stopRecording()
   }
 
@@ -404,28 +400,36 @@ export default function Home() {
       {showAuthModal && <AuthModal isOpen={showAuthModal} onOpenChange={setShowAuthModal} />}
       
       <Dialog open={showWelcomeDialog} onOpenChange={setShowWelcomeDialog}>
-        <DialogContent className="sm:max-w-[425px]">
+        <DialogContent className="sm:max-w-[600px]">
           <DialogHeader>
             <DialogTitle>Welcome to Ghosted AI 👋</DialogTitle>
             <DialogDescription className="space-y-4 pt-4">
-              <p>
-                We understand job searching can be tough and sometimes frustrating. 
-                Ghosted AI is your safe space to:
-              </p>
-              <ul className="list-disc pl-4 space-y-2">
-                <li>Vent about your job search experiences (5-30 minutes)</li>
-                <li>Share your interview stories, rejections, or ghosting experiences</li>
-                <li>Talk through your career concerns and challenges</li>
-              </ul>
-              <p className="font-medium pt-2">
-                After each recording, our AI will:
-              </p>
-              <ul className="list-disc pl-4 space-y-2">
-                <li>Provide empathetic, constructive feedback</li>
-                <li>Identify patterns in your job search</li>
-                <li>Suggest specific next steps and actions</li>
-                <li>Help track your progress over time</li>
-              </ul>
+              <div className="space-y-4">
+                <h3 className="font-semibold text-base">Free Plan Features:</h3>
+                <ul className="list-disc pl-4 space-y-2">
+                  <li>Up to 50 voice memos during beta</li>
+                  <li>10-minute maximum recording duration</li>
+                  <li>Basic AI analysis of your job search experiences</li>
+                  <li>Simple todo task management</li>
+                  <li>Basic voice memo organization</li>
+                </ul>
+
+                <div className="mt-6 p-4 bg-muted/50 rounded-lg">
+                  <h3 className="font-semibold text-base mb-3">Pro Plan - Coming Soon! 🚀</h3>
+                  <ul className="list-disc pl-4 space-y-2">
+                    <li>Unlimited voice memos</li>
+                    <li>Extended recording duration (up to 1 hour)</li>
+                    <li>Advanced AI analysis and insights</li>
+                    <li>Calendar integration for job search tracking</li>
+                    <li>Export capabilities (PDF, Audio formats)</li>
+                    <li>Priority support</li>
+                  </ul>
+                </div>
+
+                <p className="text-sm text-muted-foreground mt-4">
+                  Start with our free plan today and get early access to pro features when they launch!
+                </p>
+              </div>
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -438,7 +442,12 @@ export default function Home() {
 
       <div className="w-full max-w-md flex flex-col items-center justify-between min-h-[calc(100vh-5rem)]">
         <div className="w-full pt-8">
-          <h1 className="text-2xl font-bold text-center mb-2">Ghosted AI</h1>
+        <h1 className="text-2xl font-bold text-center mb-2 flex items-center justify-center gap-2">
+            Ghosted AI
+            <span className="px-2 py-0.5 text-xs bg-primary/10 text-primary rounded-full">
+              Beta
+            </span>
+          </h1>          
           <p className="text-muted-foreground text-center mb-8">Your AI companion for navigating the tough job market</p>
         </div>
 

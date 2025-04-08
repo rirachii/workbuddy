@@ -17,10 +17,11 @@ export function SubscriptionPlans() {
   const [isUpgrading, setIsUpgrading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const prices = {
-    monthly: 10,
-    yearly: 99, // Save ~17%
-  };
+  // Prices will be set when Pro plan launches
+  // const prices = {
+  //   monthly: 10,
+  //   yearly: 99, // Save ~17%
+  // };
 
   const handlePurchase = async (plan: 'monthly' | 'yearly') => {
     if (!window.confirm(`You will be redirected to complete your purchase of the ${plan} plan. Continue?`)) {
@@ -127,7 +128,13 @@ export function SubscriptionPlans() {
           </div>
 
           <ul className="space-y-2 mb-6">
-            {PLAN_FEATURES.free.map((feature, index) => (
+            {[
+              "Up to 50 voice memos",
+              "10-minute maximum recording duration",
+              "Basic AI analysis of recordings",
+              "Basic voice memo organization",
+              "Simple todo task management",
+            ].map((feature, index) => (
               <li key={index} className="flex items-center gap-2">
                 <Check className="h-5 w-5" />
                 <span>{feature}</span>
@@ -142,26 +149,23 @@ export function SubscriptionPlans() {
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h3 className="text-xl font-bold">Pro Monthly</h3>
-                <p className="text-muted-foreground">Unlock all features</p>
+                <p className="text-muted-foreground">Coming Soon</p>
               </div>
               <Sparkles className="h-6 w-6 text-yellow-500" />
             </div>
 
             <div className="flex-grow">
-              <p className="text-2xl font-bold">
-                ${prices.monthly}
-                <span className="text-lg text-muted-foreground">/month</span>
+              <p className="text-sm text-muted-foreground">
+                Our Pro plan is launching soon with advanced features to supercharge your job search journey.
               </p>
-              <p className="text-sm text-muted-foreground font-medium">&nbsp;</p>
             </div>
 
             <div className="mt-auto pt-6">
               <Button
                 className="w-full"
-                onClick={() => handlePurchase('monthly')}
-                disabled={isPurchasing}
+                disabled={true}
               >
-                {isPurchasing ? 'Processing...' : 'Subscribe Monthly'}
+                Coming Soon
               </Button>
             </div>
           </Card>
@@ -177,21 +181,18 @@ export function SubscriptionPlans() {
             </div>
 
             <div className="flex-grow">
-              <p className="text-2xl font-bold">
-                ${prices.yearly}
-                <span className="text-lg text-muted-foreground">/year</span>
+              <p className="text-sm text-muted-foreground">
+                Save with our annual plan. Get access to all Pro features at a discounted rate when we launch.
               </p>
-              <p className="text-sm text-green-600 font-medium">Save ~17% compared to monthly</p>
             </div>
 
             <div className="mt-auto pt-6">
               <Button
                 className="w-full"
                 variant="default"
-                onClick={() => handlePurchase('yearly')}
-                disabled={isPurchasing}
+                disabled={true}
               >
-                {isPurchasing ? 'Processing...' : 'Subscribe Yearly'}
+                Coming Soon
               </Button>
             </div>
           </Card>
@@ -200,7 +201,13 @@ export function SubscriptionPlans() {
         <div className="text-sm text-muted-foreground">
           <p>Pro features include:</p>
           <ul className="list-disc list-inside mt-2 space-y-1">
-            {PLAN_FEATURES.pro.map((feature, index) => (
+            {[
+              "Unlimited voice memos",
+              "Extended recording duration (up to 1 hour)",
+              "Advanced AI analysis and insights",
+              "Calendar integration for job search tracking",
+              "Export capabilities (PDF, Audio formats)",
+            ].map((feature, index) => (
               <li key={index}>{feature}</li>
             ))}
           </ul>
@@ -261,20 +268,24 @@ export function SubscriptionPlans() {
         <Card className="p-4 border-dashed">
           <div className="flex items-center gap-2 mb-2">
             <Sparkles className="h-5 w-5 text-yellow-500" />
-            <h3 className="font-medium">Upgrade to Yearly</h3>
+            <h3 className="font-medium">Pro Plan - Coming Soon!</h3>
           </div>
           <p className="text-sm text-muted-foreground mb-2">
-            Switch to our yearly plan and save ~17% compared to monthly billing.
-          </p>
-          <p className="font-medium">
-            ${prices.yearly}/year (${(prices.yearly / 12).toFixed(2)}/month equivalent)
+            Get ready for advanced features and unlimited recordings with our upcoming Pro plan.
           </p>
         </Card>
 
         <div className="text-sm text-muted-foreground">
           <p>Your Pro plan includes:</p>
           <ul className="list-disc list-inside mt-2 space-y-1">
-            {PLAN_FEATURES.pro.map((feature, index) => (
+            {[
+              "Unlimited voice memos",
+              "Extended recording duration (up to 1 hour)",
+              "Advanced AI analysis and insights",
+              "Calendar integration for job search tracking",
+              "Export capabilities (PDF, Audio formats)",
+              "Priority support",
+            ].map((feature, index) => (
               <li key={index}>{feature}</li>
             ))}
           </ul>
@@ -335,7 +346,14 @@ export function SubscriptionPlans() {
       <div className="text-sm text-muted-foreground">
         <p>Your Pro plan includes:</p>
         <ul className="list-disc list-inside mt-2 space-y-1">
-          {PLAN_FEATURES.pro.map((feature, index) => (
+          {[
+            "Unlimited voice memos",
+            "Extended recording duration (up to 1 hour)",
+            "Advanced AI analysis and insights",
+            "Calendar integration for job search tracking",
+            "Export capabilities (PDF, Audio formats)",
+            "Priority support",
+          ].map((feature, index) => (
             <li key={index}>{feature}</li>
           ))}
         </ul>

@@ -137,7 +137,17 @@ export default function NotesPage() {
   return (
     <main className="flex min-h-screen flex-col p-4 pb-20 bg-background">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold">My Notes</h1>
+        <div className="space-y-1">
+          <h1 className="text-2xl font-bold">My Notes</h1>
+          <div className="flex items-center gap-2">
+            <p className="text-sm text-muted-foreground">
+              {memos.length} of 50 recordings used
+            </p>
+            <span className="px-2 py-0.5 text-xs bg-primary/10 text-primary rounded-full">
+              Free Plan
+            </span>
+          </div>
+        </div>
         <Link href="/">
           <Button>
             <Plus size={16} className="mr-2" />
@@ -145,6 +155,15 @@ export default function NotesPage() {
           </Button>
         </Link>
       </div>
+
+      {memos.length >= 45 && (
+        <div className="mb-4 p-4 bg-muted/50 rounded-lg">
+          <h3 className="font-semibold text-sm mb-2">Almost at capacity! 🎉</h3>
+          <p className="text-sm text-muted-foreground">
+            You're approaching the free plan limit of 50 recordings. Pro plan coming soon with unlimited recordings and advanced features!
+          </p>
+        </div>
+      )}
 
       <div className="space-y-4">
         {memos.length === 0 ? (
@@ -205,7 +224,13 @@ export default function NotesPage() {
                           <div className="flex items-start justify-between gap-2">
                             <div className="flex-1">
                               <div className="flex items-start justify-between">
-                                <span className="font-medium">{todo.title}</span>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-medium">{todo.title}</span>
+                                  {/* Show a star or indicator for priority tasks - assuming first task is priority */}
+                                  {memo.todos.indexOf(todo) === 0 && (
+                                    <span className="inline-block text-xs text-primary font-medium">Priority</span>
+                                  )}
+                                </div>
                                 <span className="text-xs text-muted-foreground whitespace-nowrap ml-2">
                                   {todo.due_date ? formatDistanceToNow(new Date(todo.due_date), { addSuffix: true }) : 'No due date'}
                                 </span>

@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, Suspense } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { ArrowLeft, Save, Loader2, Play, Pause } from "lucide-react"
+import { ArrowLeft, Save, Loader2, Play, Pause, Plus, Trash2 } from "lucide-react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { toast } from "sonner"
@@ -14,6 +14,7 @@ import { formatTimeWithHours } from "@/lib/utils"
 import { useConversations } from '@/lib/hooks/useConversations'
 import { ConversationResponse } from '@/lib/types/conversation'
 import { BottomNav } from "@/components/BottomNav"
+import { Badge } from "@/components/ui/badge"
 
 // Enum to track the processing stages
 enum ProcessingStage {
@@ -110,33 +111,7 @@ function NewNotePageContent() {
         }
 
         setMemo(memo)
-        setTitle(memo.title)
-
-        // Initialize audio player with signed URL
-        const { data, error: signedUrlError } = await supabase
-          .storage
-          .from('voice-memos')
-          .createSignedUrl(memo.storage_path, 3600) // 1 hour expiry
-
-        if (signedUrlError || !data) throw new Error('Failed to get signed URL for audio file')
-
-        const audio = new Audio(data.signedUrl)
-        audio.addEventListener('ended', () => setIsPlaying(false))
-        audio.addEventListener('loadedmetadata', () => {
-          setAudioDuration(Math.round(audio.duration))
-        })
-        setAudioElement(audio)
-
-        // Start processing if not already processed and not already started
-        if (!memo.transcription && !memo.summary && !processingStarted.current) {
-          processingStarted.current = true
-          processAudio(memo)
-        }
-
-        return () => {
-          audio.removeEventListener('ended', () => setIsPlaying(false))
-          audio.pause()
-        }
+        setTitle(memo.title || "New Memo")
       } catch (error) {
         console.error("Error loading memo:", error)
         toast.error(error instanceof Error ? error.message : "Failed to load memo")
@@ -147,21 +122,143 @@ function NewNotePageContent() {
     loadMemo()
   }, [searchParams, user, authLoading, router])
 
+  // Initialize audio player in a separate effect
+  useEffect(() => {
+    if (!memo?.storage_path) return
+
+    const initAudio = async () => {
+      try {
+        const supabase = getSupabaseClient()
+        const { data, error: signedUrlError } = await supabase
+          .storage
+          .from('voice-memos')
+          .createSignedUrl(memo.storage_path!, 3600) // 1 hour expiry
+
+        if (signedUrlError || !data) throw new Error('Failed to get signed URL for audio file')
+
+        const audio = new Audio(data.signedUrl)
+        
+        const handleEnded = () => setIsPlaying(false)
+        const handleMetadata = () => setAudioDuration(Math.round(audio.duration))
+        
+        audio.addEventListener('ended', handleEnded)
+        audio.addEventListener('loadedmetadata', handleMetadata)
+        setAudioElement(audio)
+      } catch (error) {
+        console.error("Error initializing audio:", error)
+        toast.error("Failed to initialize audio player")
+      }
+    }
+
+    initAudio()
+  }, [memo?.storage_path])
+
+  // Handle already processed memos
+  useEffect(() => {
+    if (!memo || !memo.summary) return
+    
+    setSummary(memo.summary)
+    setProcessingStage(ProcessingStage.COMPLETE)
+        
+    // Load existing todos
+    const loadTodos = async () => {
+      try {
+        const supabase = getSupabaseClient()
+        const { data: todos, error: todosError } = await supabase
+          .from("todos")
+          .select("*")
+          .eq('memo_id', memo.id)
+        
+        if (!todosError && todos) {
+          // Convert todos to tasks format
+          const loadedTasks: Task[] = todos.map((todo: any) => ({
+            id: todo.id,
+            text: todo.title,
+            deadline: todo.due_date || "No deadline",
+            subtasks: [],
+            isPriority: false // Will set the first one as priority below
+          }))
+          
+          // Set the first task as priority
+          if (loadedTasks.length > 0) {
+            loadedTasks[0].isPriority = true
+          }
+          
+          setTasks(loadedTasks)
+        }
+      } catch (error) {
+        console.error("Error loading todos:", error)
+      }
+    }
+    
+    loadTodos()
+  }, [memo])
+  
+  // Start processing for new memos
+  useEffect(() => {
+    if (!memo || processingStarted.current || memo.summary || memo.transcription) return
+    
+    const triggerProcessing = () => {
+      processingStarted.current = true
+      setProcessingStage(ProcessingStage.PROCESSING)
+      
+      // Use setTimeout to break the call stack
+      setTimeout(() => {
+        processAudio(memo).catch(error => {
+          console.error("Error in processing:", error)
+          setProcessingStage(ProcessingStage.ERROR)
+          setError(error instanceof Error ? error.message : "Unknown processing error")
+          processingStarted.current = false
+          
+          // Add a fallback task when processing fails
+          const fallbackTask: Task = {
+            id: crypto.randomUUID(),
+            text: "Review this recording",
+            deadline: "End of week",
+            subtasks: [],
+            isPriority: true
+          };
+          
+          // Set a default summary and task
+          setSummary("Processing failed. Please add a summary manually.")
+          setTasks([fallbackTask])
+          
+          // Still mark as complete so user can edit manually
+          setProcessingStage(ProcessingStage.COMPLETE)
+          
+          toast.error("Automatic processing failed. You can edit tasks manually.")
+        })
+      }, 10)
+    }
+    
+    triggerProcessing()
+  }, [memo])
+
   const processAudio = async (memo: Memo) => {
-    if (processingStage === ProcessingStage.PROCESSING) {
-      return
+    // Don't call this function if already processing
+    if (!memo || !memo.storage_path || !user) {
+      throw new Error('Invalid memo or user data')
     }
 
     try {
-      console.log("Starting audio processing for memo:", memo.id)
-      setProcessingStage(ProcessingStage.PROCESSING)
+      console.log("Processing audio for memo:", memo.id)
       
-      if (!user) {
-        throw new Error('Please sign in to process audio')
+      // Check recording count
+      const supabase = getSupabaseClient()
+      const { count: recordingCount, error: countError } = await supabase
+        .from('memos')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+
+      if (countError) {
+        throw new Error('Failed to check recording count')
       }
 
-      // Fetch previous memos with their summaries and todos
-      const supabase = getSupabaseClient()
+      if (recordingCount && recordingCount >= 50) {
+        throw new Error('You have reached the maximum limit of 50 recordings for the beta version. Pro version coming soon!')
+      }
+      
+      // Fetch previous memos with their summaries and todos (limit to 3 instead of 5 to reduce data)
       const { data: previousMemos, error: memosError } = await supabase
         .from('memos')
         .select(`
@@ -178,41 +275,43 @@ function NewNotePageContent() {
         .eq('user_id', user.id)
         .neq('id', memo.id) // Exclude current memo
         .order('created_at', { ascending: false })
-        .limit(5) // Get last 5 conversations
+        .limit(3) // Reduced from 5 to 3 to minimize payload
 
       if (memosError) {
-        console.error("Error fetching previous memos:", memosError)
         throw new Error('Failed to fetch conversation history')
       }
 
-      // Format previous memos into conversations
-      const previousConversations = previousMemos.map(memo => ({
-        id: memo.id,
-        timestamp: memo.created_at || new Date().toISOString(),
-        summary: memo.summary || '',
-        tasks: (memo.todos || []).map(todo => ({
+      // Format previous memos into conversations - with simplified approach
+      const previousConversations = previousMemos.map(memo => {
+        const tasks = (memo.todos || []).map(todo => ({
           id: todo.id,
           text: todo.title,
           deadline: todo.due_date || 'No deadline set',
-          isPriority: false, // We'll set the first task as priority for now
+          isPriority: false,
           subtasks: []
         }))
-      }))
-
-      // If there are tasks, set the first one as priority for each conversation
-      previousConversations.forEach(conv => {
-        if (conv.tasks.length > 0) {
-          conv.tasks[0].isPriority = true
+        
+        // Set first task as priority if it exists
+        if (tasks.length > 0) {
+          tasks[0].isPriority = true
+        }
+        
+        return {
+          id: memo.id,
+          timestamp: memo.created_at || new Date().toISOString(),
+          summary: memo.summary || '',
+          tasks: tasks
         }
       })
 
+      // Get authentication session
       const { data: { session } } = await supabase.auth.getSession()
       
       if (!session?.access_token) {
         throw new Error('No active session - please sign in again')
       }
 
-      console.log('Starting request to edge function...');
+      console.log('Starting request to edge function...')
       const response = await fetch('https://ragulxwhrwzzeifoqilx.supabase.co/functions/v1/process', {
         method: 'POST',
         headers: {
@@ -223,44 +322,48 @@ function NewNotePageContent() {
           filePath: memo.storage_path,
           previousConversations
         })
-      });
-
-      console.log('Edge function response status:', response.status);
+      })
       
       if (!response.ok) {
-        const errorData = await response.json().catch(e => ({ 
-          error: `Failed to parse error response: ${e.message}` 
-        }));
-        console.error('Edge function error:', errorData);
-        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+        const errorText = await response.text()
+        console.error('Edge function error response:', errorText)
+        throw new Error(`HTTP error! status: ${response.status}`)
       }
 
-      const data = await response.json() as ProcessedData
-      
-      if (!data) {
-        throw new Error('Empty response from server')
+      // Parse the JSON response - handle potential errors
+      let data: ProcessedData
+      try {
+        data = await response.json()
+      } catch (e) {
+        console.error("Error parsing response:", e)
+        throw new Error("Failed to parse server response")
       }
       
-      if (typeof data.summary !== 'string') {
-        throw new Error('Invalid or missing summary in server response')
+      if (!data || !data.summary) {
+        throw new Error('Invalid response from server')
       }
       
-      if (!Array.isArray(data.tasks)) {
-        throw new Error('Invalid or missing tasks array in server response')
-      }
+      // Transform tasks to our application format with simplified error handling
+      let transformedTasks: Task[] = []
       
-      if (data.tasks.length === 0) {
-        throw new Error('No tasks returned from server')
+      if (Array.isArray(data.tasks) && data.tasks.length > 0) {
+        transformedTasks = data.tasks.map((task: any) => ({
+          id: task.id || crypto.randomUUID(),
+          text: task.text || "Untitled task",
+          deadline: task.deadline || "End of week",
+          subtasks: Array.isArray(task.subtasks) ? task.subtasks : [],
+          isPriority: task.text === data.priority_focus
+        }))
+      } else {
+        // Create a default task if none returned
+        transformedTasks = [{
+          id: crypto.randomUUID(),
+          text: "Review this recording",
+          deadline: "End of week",
+          subtasks: [],
+          isPriority: true
+        }]
       }
-
-      // Transform tasks to our application format
-      const transformedTasks: Task[] = data.tasks.map((task: { text: string; deadline: string; subtasks?: string[]; id?: string }) => ({
-        id: task.id || crypto.randomUUID(),
-        text: task.text,
-        deadline: task.deadline,
-        subtasks: task.subtasks || [],
-        isPriority: task.text === data.priority_focus
-      }))
 
       const processedData: ProcessedData = {
         id: data.id || `session_${Date.now()}`,
@@ -272,6 +375,12 @@ function NewNotePageContent() {
         rawResponse: JSON.stringify(data)
       }
       
+      // Update UI state first to prevent blocking
+      setSummary(processedData.summary)
+      setTasks(processedData.tasks)
+      setProcessingStage(ProcessingStage.COMPLETE)
+      
+      // Then save to database in the background
       await handleProcessingResults(processedData, memo)
     } catch (error) {
       console.error("Error processing audio:", error)
@@ -283,6 +392,7 @@ function NewNotePageContent() {
           : 'An unknown error occurred'
       setError(errorMessage)
       toast.error(`Error processing recording: ${errorMessage}`)
+      throw error // rethrow to allow caller to handle
     }
   }
 
@@ -324,6 +434,45 @@ function NewNotePageContent() {
       return nextWeek.toISOString()
     }
     
+    // Handle "in X days/weeks/months"
+    const inMatch = lowercaseStr.match(/in\s+(\d+)\s+(day|week|month|hour)s?/)
+    if (inMatch) {
+      const amount = parseInt(inMatch[1])
+      const unit = inMatch[2]
+      const future = new Date(now)
+      
+      if (unit === 'day') {
+        future.setDate(now.getDate() + amount)
+      } else if (unit === 'week') {
+        future.setDate(now.getDate() + (amount * 7))
+      } else if (unit === 'month') {
+        future.setMonth(now.getMonth() + amount)
+      } else if (unit === 'hour') {
+        future.setHours(now.getHours() + amount)
+      }
+      
+      future.setHours(23, 59, 59, 999)
+      return future.toISOString()
+    }
+    
+    // Handle day names (next Monday, Tuesday, etc.)
+    const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+    for (let i = 0; i < dayNames.length; i++) {
+      if (lowercaseStr.includes(dayNames[i])) {
+        const targetDay = i
+        const current = now.getDay()
+        const daysToAdd = (targetDay + 7 - current) % 7
+        
+        // If today is the target day and we just say "Monday", we mean next Monday
+        const daysOffset = (daysToAdd === 0 && !lowercaseStr.includes('this')) ? 7 : daysToAdd
+        
+        const futureDate = new Date(now)
+        futureDate.setDate(now.getDate() + daysOffset)
+        futureDate.setHours(23, 59, 59, 999)
+        return futureDate.toISOString()
+      }
+    }
+    
     // Try to parse as a specific date
     const specificDate = new Date(dateStr)
     if (!isNaN(specificDate.getTime())) {
@@ -341,49 +490,60 @@ function NewNotePageContent() {
     try {
       const supabase = getSupabaseClient()
 
-      // Update memo with processing results
+      // Update the memo with processing results
       const { error: updateError } = await supabase
-        .from("memos")
+        .from('memos')
         .update({
-          transcription: data.transcription || '',
           summary: data.summary,
+          transcription: data.transcription || '',
+          raw_response: data.rawResponse,
+          processed_at: new Date().toISOString()
         })
         .eq('id', memo.id)
 
       if (updateError) {
-        throw new Error(`Failed to update memo: ${updateError.message}`)
+        console.error("Error updating memo:", updateError)
+        throw updateError
       }
 
-      // Create todos if tasks were extracted
-      if (data.tasks && data.tasks.length > 0) {
-        const todosToInsert = data.tasks.map((task) => {
-          if (!user?.id) {
-            throw new Error('User not found')
-          }
-          
-          const parsedDeadline = parseRelativeDate(task.deadline)
-          
-          return {
-            user_id: user.id,
-            memo_id: memo.id,
-            title: task.text,
-            due_date: parsedDeadline,
-            is_completed: false,
-          }
-        })
+      // Create tasks
+      if (data.tasks && data.tasks.length > 0 && user?.id) {
+        const tasksToInsert = data.tasks.map(task => ({
+          memo_id: memo.id,
+          title: task.text,
+          due_date: task.deadline,
+          is_priority: task.isPriority || false,
+          is_completed: false,
+          user_id: user.id,
+          description: null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }))
 
-        const { error: todosError } = await supabase
-          .from("todos")
-          .insert(todosToInsert)
+        const { error: tasksError } = await supabase
+          .from('todos')
+          .insert(tasksToInsert)
 
-        if (todosError) {
-          throw new Error(`Failed to create todos: ${todosError.message}`)
+        if (tasksError) {
+          console.error("Error inserting tasks:", tasksError)
+          throw tasksError
         }
       }
 
-      setSummary(data.summary)
-      setTasks(data.tasks)
-      
+      // Delete the audio file from storage after successful processing
+      if (memo.storage_path) {
+        const { error: deleteError } = await supabase
+          .storage
+          .from('voice-memos')
+          .remove([memo.storage_path])
+
+        if (deleteError) {
+          console.error("Error deleting audio file:", deleteError)
+          // Don't throw here - we don't want to fail the whole operation if deletion fails
+          toast.error("Note saved but couldn't delete temporary audio file")
+        }
+      }
+
       // Cast ProcessedData to ConversationResponse
       const conversation: ConversationResponse = {
         id: data.id,
@@ -395,12 +555,12 @@ function NewNotePageContent() {
       }
       
       addConversation(conversation)
-      
-      setProcessingStage(ProcessingStage.COMPLETE)
       toast.success("Processing complete!")
+      
     } catch (error) {
       console.error("Error in handleProcessingResults:", error)
-      throw error instanceof Error ? error : new Error('Failed to process results')
+      // Don't throw here - we don't want to show errors to the user for background operations
+      // The UI is already updated with the data
     }
   }
 
@@ -422,13 +582,87 @@ function NewNotePageContent() {
     try {
       const supabase = getSupabaseClient()
       
-      // Update memo title
+      // Set a valid transcription if it failed (for DB constraints)
+      const transcription = memo.transcription || "No automatic transcription available"
+      
+      // Update memo title and summary
       const { error: updateError } = await supabase
         .from("memos")
-        .update({ title })
+        .update({ 
+          title,
+          summary,
+          transcription
+        })
         .eq('id', memo.id)
 
       if (updateError) throw updateError
+
+      // Delete existing todos for this memo
+      const { error: deleteTodosError } = await supabase
+        .from("todos")
+        .delete()
+        .eq('memo_id', memo.id)
+
+      if (deleteTodosError) throw deleteTodosError
+
+      // Create updated todos - make sure there's at least one if empty
+      const tasksToSave = tasks.length > 0 ? tasks : [{
+        id: crypto.randomUUID(),
+        text: "Review this recording",
+        deadline: "End of week",
+        subtasks: [],
+        isPriority: true
+      }];
+      
+      const todosToInsert = tasksToSave.map((task) => {
+        if (!user?.id) {
+          throw new Error('User not found')
+        }
+        
+        // Handle potentially invalid dates gracefully
+        let parsedDeadline;
+        try {
+          parsedDeadline = parseRelativeDate(task.deadline)
+        } catch (e) {
+          // Use tomorrow if parsing fails
+          const tomorrow = new Date()
+          tomorrow.setDate(tomorrow.getDate() + 1)
+          tomorrow.setHours(23, 59, 59, 999)
+          parsedDeadline = tomorrow.toISOString()
+        }
+        
+        return {
+          user_id: user.id,
+          memo_id: memo.id,
+          title: task.text || "Untitled task",
+          due_date: parsedDeadline,
+          is_completed: false,
+        }
+      })
+
+      const { error: todosError } = await supabase
+        .from("todos")
+        .insert(todosToInsert)
+
+      if (todosError) throw todosError
+
+      // Update the conversation in local storage
+      const conversation: ConversationResponse = {
+        id: memo.id,
+        timestamp: memo.created_at || new Date().toISOString(),
+        summary: summary,
+        transcription: transcription,
+        tasks: tasksToSave,
+        rawResponse: JSON.stringify({
+          id: memo.id,
+          timestamp: memo.created_at,
+          summary: summary,
+          transcription: transcription,
+          tasks: tasksToSave
+        })
+      }
+      
+      addConversation(conversation)
 
       toast.success("Memo saved successfully!")
       router.push("/notes")
@@ -446,6 +680,8 @@ function NewNotePageContent() {
           Back to Notes
         </Link>
       </div>
+
+      <BetaNotice />
 
       <Card>
         <CardHeader>
@@ -486,21 +722,107 @@ function NewNotePageContent() {
             <div className="space-y-4">
               <div>
                 <h3 className="font-semibold mb-2">Summary</h3>
-                <p className="text-muted-foreground">{summary}</p>
+                {error ? (
+                  <div className="space-y-2">
+                    <p className="text-muted-foreground text-sm">Automatic processing failed. You can enter a summary manually:</p>
+                    <textarea
+                      value={summary}
+                      onChange={(e) => setSummary(e.target.value)}
+                      className="w-full p-2 border rounded-md min-h-[100px]"
+                      placeholder="Enter your summary here..."
+                    />
+                  </div>
+                ) : (
+                  <p className="text-muted-foreground">{summary}</p>
+                )}
               </div>
 
-              {tasks.length > 0 && (
-                <div>
-                  <h3 className="font-semibold mb-2">Tasks</h3>
-                  <ul className="list-disc list-inside space-y-1">
-                    {tasks.map(task => (
-                      <li key={task.id} className="text-muted-foreground">
-                        {task.text} (Due: {task.deadline})
-                      </li>
-                    ))}
-                  </ul>
+              <div>
+                <h3 className="font-semibold mb-2">Tasks</h3>
+                <div className="space-y-3">
+                  {tasks.map((task, index) => (
+                    <div key={task.id} className="p-3 border rounded-md">
+                      <div className="grid gap-3">
+                        <div>
+                          <label htmlFor={`task-${index}`} className="text-sm font-medium mb-1 block">
+                            Task
+                          </label>
+                          <Input
+                            id={`task-${index}`}
+                            value={task.text}
+                            onChange={(e) => {
+                              const updatedTasks = [...tasks];
+                              updatedTasks[index] = { ...task, text: e.target.value };
+                              setTasks(updatedTasks);
+                            }}
+                          />
+                        </div>
+                        <div>
+                          <label htmlFor={`deadline-${index}`} className="text-sm font-medium mb-1 block">
+                            Deadline
+                          </label>
+                          <Input
+                            id={`deadline-${index}`}
+                            value={task.deadline}
+                            onChange={(e) => {
+                              const updatedTasks = [...tasks];
+                              updatedTasks[index] = { ...task, deadline: e.target.value };
+                              setTasks(updatedTasks);
+                            }}
+                          />
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <input 
+                              type="checkbox" 
+                              id={`priority-${index}`} 
+                              checked={task.isPriority}
+                              onChange={(e) => {
+                                const updatedTasks = [...tasks];
+                                updatedTasks[index] = { ...task, isPriority: e.target.checked };
+                                setTasks(updatedTasks);
+                              }}
+                              className="h-4 w-4"
+                            />
+                            <label htmlFor={`priority-${index}`} className="text-sm">
+                              Priority task
+                            </label>
+                          </div>
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => {
+                              const updatedTasks = [...tasks];
+                              updatedTasks.splice(index, 1);
+                              setTasks(updatedTasks);
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  
+                  <Button 
+                    variant="outline" 
+                    className="w-full"
+                    onClick={() => {
+                      const newTask: Task = {
+                        id: crypto.randomUUID(),
+                        text: "",
+                        deadline: "End of week",
+                        subtasks: [],
+                        isPriority: false
+                      };
+                      setTasks([...tasks, newTask]);
+                    }}
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add new task
+                  </Button>
                 </div>
-              )}
+              </div>
             </div>
           )}
 
@@ -522,6 +844,22 @@ function NewNotePageContent() {
       </Card>
       <BottomNav />
     </main>
+  )
+}
+
+const BetaNotice = () => {
+  return (
+    <div className="bg-muted/50 rounded-lg p-4 flex items-center justify-between">
+      <div className="flex items-center gap-2">
+        <Badge variant="secondary">BETA</Badge>
+        <span className="text-sm text-muted-foreground">
+          Free for up to 50 recordings during beta
+        </span>
+      </div>
+      <Badge variant="outline" className="text-muted-foreground">
+        Pro version coming soon
+      </Badge>
+    </div>
   )
 }
 
